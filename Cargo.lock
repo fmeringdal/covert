@@ -251,11 +251,11 @@ checksum = "5827cebf4670468b8772dd191856768aedcb1b0278a04f989f7766351917b9dc"
 
 [[package]]
 name = "covert"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "covert-sdk",
- "covert-server",
+ "covert-system",
  "serde",
  "serde_json",
  "tempfile",
@@ -264,7 +264,7 @@ dependencies = [
 
 [[package]]
 name = "covert-framework"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -284,7 +284,7 @@ dependencies = [
 
 [[package]]
 name = "covert-kv"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -310,7 +310,7 @@ dependencies = [
 
 [[package]]
 name = "covert-psql"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -331,7 +331,7 @@ dependencies = [
 
 [[package]]
 name = "covert-sdk"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "covert-types",
  "reqwest",
@@ -340,8 +340,33 @@ dependencies = [
 ]
 
 [[package]]
-name = "covert-server"
-version = "0.1.0"
+name = "covert-storage"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "covert-types",
+ "futures",
+ "libsqlite3-sys",
+ "parking_lot 0.12.1",
+ "rand",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "sha2",
+ "snailquote",
+ "sqlparser",
+ "sqlx",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-error",
+]
+
+[[package]]
+name = "covert-system"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -384,33 +409,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "covert-storage"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "covert-types",
- "futures",
- "libsqlite3-sys",
- "parking_lot 0.12.1",
- "rand",
- "rust-embed",
- "serde",
- "serde_json",
- "sha2",
- "snailquote",
- "sqlparser",
- "sqlx",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-error",
-]
-
-[[package]]
 name = "covert-types"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -434,7 +434,7 @@ dependencies = [
 
 [[package]]
 name = "covert-userpass-auth"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bcrypt",
  "covert-framework",

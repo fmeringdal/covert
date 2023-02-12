@@ -1,6 +1,8 @@
 [package]
 name = "covert-framework"
-version = "0.1.0"
+description = "Covert framework for implementing backends"
+license = "MIT OR Apache-2.0"
+version = "0.1.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -8,8 +10,8 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
-covert-types = { path = "../covert-types" }
-covert-storage = { path = "../covert-storage" }
+covert-types = { path = "../covert-types", version = "0.1.1" }
+covert-storage = { path = "../covert-storage", version = "0.1.1" }
 futures = { version = "0.3", default-features = false }
 hyper = { version = "0.14", default-features = false }
 matchit = "0.6"

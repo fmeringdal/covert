@@ -513,12 +513,12 @@ async fn main() {
         },
         Commands::Server(server) => match server.storage_path {
             Some(storage_path) => {
-                let config = covert_server::Config {
+                let config = covert_system::Config {
                     port: server.port,
                     storage_path,
                 };
 
-                covert_server::start(config).await.unwrap()
+                covert_system::start(config).await.unwrap()
             }
             None => {
                 // TODO: auto unseal
@@ -531,12 +531,12 @@ async fn main() {
                     .unwrap()
                     .to_string();
 
-                let config = covert_server::Config {
+                let config = covert_system::Config {
                     port: server.port,
                     storage_path,
                 };
 
-                covert_server::start(config).await.unwrap()
+                covert_system::start(config).await.unwrap()
             }
         },
         Commands::Operator(operator) => match operator.subcommand {

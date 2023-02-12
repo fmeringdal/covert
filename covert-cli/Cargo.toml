@@ -1,14 +1,15 @@
 [package]
 name = "covert"
-version = "0.1.0"
+description = "Covert CLI"
+license = "MIT OR Apache-2.0"
+version = "0.1.1"
 edition = "2021"
-description = "Covert secrets management" 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-covert-sdk = { path = "../covert-sdk" }
-covert-server = { path = "../covert-server" }
+covert-sdk = { path = "../covert-sdk", version = "0.1.1" }
+covert-system = { path = "../covert-server", version = "0.1.1" }
 clap = { version = "4.1", features = ["derive", "cargo", "env"] }
 serde_json = "1.0"
 serde = { version = "1", default-features = false }

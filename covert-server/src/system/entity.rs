@@ -81,12 +81,9 @@ pub async fn handle_attach_entity_policy(
 
     let mut attached_policies = vec![];
     for policy in &params.policy_names {
-        if identity_store
-            .attach_policy(&params.name, policy)
-            .await
-            .is_err()
-        {
+        if let Err(error) = identity_store.attach_policy(&params.name, policy).await {
             tracing::error!(
+                ?error,
                 policy,
                 entity = params.name,
                 "Unable to attach policy to entity",
@@ -109,12 +106,9 @@ pub async fn handle_attach_entity_alias(
 ) -> Result<Response, Error> {
     let mut attached_aliases = vec![];
     for alias in &params.aliases {
-        if identity_store
-            .attach_alias(&params.name, alias)
-            .await
-            .is_err()
-        {
+        if let Err(error) = identity_store.attach_alias(&params.name, alias).await {
             tracing::error!(
+                ?error,
                 ?alias,
                 entity = params.name,
                 "Unable to attach alias to entity",
