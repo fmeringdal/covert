@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "DROP INDEX idx_contacts_email",
+    "output": "DROP INDEX foo_idx_contacts_email;"
+}

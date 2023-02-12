@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "DROP VIEW v_tracks",
+    "output": "DROP VIEW foo_v_tracks;"
+}

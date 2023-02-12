@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "SELECT (SELECT MAX(salary) FROM t1) AS tmp FROM t2;",
+    "output": "SELECT (SELECT MAX(salary) FROM foo_t1) AS tmp FROM foo_t2;"
+}

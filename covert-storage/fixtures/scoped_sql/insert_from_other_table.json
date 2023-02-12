@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "INSERT INTO users SELECT * FROM old_users",
+    "output": "INSERT INTO foo_users SELECT * FROM foo_old_users;"
+}

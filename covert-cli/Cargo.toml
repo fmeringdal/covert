@@ -1,0 +1,16 @@
+[package]
+name = "covert"
+version = "0.1.0"
+edition = "2021"
+description = "Covert secrets management" 
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+covert-sdk = { path = "../covert-sdk" }
+covert-server = { path = "../covert-server" }
+clap = { version = "4.1", features = ["derive", "cargo", "env"] }
+serde_json = "1.0"
+serde = { version = "1", default-features = false }
+tempfile = "3.3"
+tokio = { version = "1", features = ["full"] }

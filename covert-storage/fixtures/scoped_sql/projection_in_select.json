@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "SELECT u.id, bar, uu.id FROM users AS u",
+    "output": "SELECT foo_u.id, bar, uu.id FROM foo_users AS foo_u;"
+}

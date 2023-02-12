@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "SELECT * FROM (SELECT * FROM bar) AS temp",
+    "output": "SELECT * FROM (SELECT * FROM foo_bar) AS foo_temp;"
+}

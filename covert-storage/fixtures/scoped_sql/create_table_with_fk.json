@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "CREATE TABLE users (id INTEGER PRIMARY KEY, policy_id INTEGER REFERENCES policies(id))",
+    "output": "CREATE TABLE foo_users (id INTEGER PRIMARY KEY, policy_id INTEGER REFERENCES foo_policies (id));"
+}

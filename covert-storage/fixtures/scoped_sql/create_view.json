@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "CREATE VIEW v_tracks AS SELECT trackid, tracks.name, albums.Title AS album, media_types.Name AS media,genres.Name AS genres FROM tracks JOIN albums ON albums.AlbumId = tracks.AlbumId JOIN media_types ON media_types.MediaTypeId = tracks.MediaTypeId JOIN genres ON genres.GenreId = tracks.GenreId",
+    "output": "CREATE VIEW foo_v_tracks AS SELECT trackid, foo_tracks.name, foo_albums.Title AS album, foo_media_types.Name AS media, foo_genres.Name AS genres FROM foo_tracks JOIN foo_albums ON foo_albums.AlbumId = foo_tracks.AlbumId JOIN foo_media_types ON foo_media_types.MediaTypeId = foo_tracks.MediaTypeId JOIN foo_genres ON foo_genres.GenreId = foo_tracks.GenreId;"
+}

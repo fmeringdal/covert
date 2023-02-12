@@ -1,0 +1,6 @@
+{
+    "prefix": "foo_",
+    "skip": true,
+    "input": "SELECT eval('DELETE FROM t1') FROM t2;",
+    "output": "SELECT eval('DELETE FROM foo_t1') FROM foo_t2;"
+}

@@ -1,0 +1,26 @@
+[package]
+name = "covert-types"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0"
+bytes = { version = "1.1", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+http = "0.2"
+http-body = "0.4"
+humantime-serde = "1.1"
+hyper = { version = "0.14", default-features = false }
+lazy_static = "1.4"
+rand = "0.8"
+regex = "1.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_with = "2.0"
+strum = { version = "0.24", features = ["derive"] }
+sqlx = { version = "0.6", features = ["chrono", "time", "runtime-tokio-native-tls"] }
+thiserror = "1.0"
+tracing-error = "0.1"
+uuid = { version = "0.8", features = ["serde", "v4"] }

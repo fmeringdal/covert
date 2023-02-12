@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "ALTER TABLE users ADD EMAIL TEXT",
+    "output": "ALTER TABLE foo_users ADD EMAIL TEXT;"
+}

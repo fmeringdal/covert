@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "CREATE UNIQUE INDEX idx_contacts_email ON contacts(email)",
+    "output": "CREATE UNIQUE INDEX foo_idx_contacts_email ON foo_contacts(email);"
+}

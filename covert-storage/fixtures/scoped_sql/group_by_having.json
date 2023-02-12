@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "SELECT * FROM movies AS m GROUP BY category_id,m.year_released HAVING category_id = 8;",
+    "output": "SELECT * FROM foo_movies AS foo_m GROUP BY category_id, foo_m.year_released HAVING category_id = 8;"
+}

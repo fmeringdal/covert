@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "CREATE TABLE users AS (SELECT c.uid, name FROM contacts AS c)",
+    "output": "CREATE TABLE foo_users AS (SELECT foo_c.uid, name FROM foo_contacts AS foo_c);"
+}

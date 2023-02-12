@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "CREATE TABLE users (id INTEGER PRIMARY KEY, policy_id INTEGER, FOREIGN KEY (policy_id) REFERENCES policies(id) ON DELETE CASCADE ON UPDATE RESTRICT)",
+    "output": "CREATE TABLE foo_users (id INTEGER PRIMARY KEY, policy_id INTEGER, FOREIGN KEY (policy_id) REFERENCES foo_policies(id) ON DELETE CASCADE ON UPDATE RESTRICT);"
+}

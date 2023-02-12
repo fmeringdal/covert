@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "UPDATE Customers SET Customers.ContactName = 'Alfred Schmidt', City= 'Frankfurt' WHERE CustomerID = 1",
+    "output": "UPDATE foo_Customers SET foo_Customers.ContactName = 'Alfred Schmidt', City = 'Frankfurt' WHERE CustomerID = 1;"
+}

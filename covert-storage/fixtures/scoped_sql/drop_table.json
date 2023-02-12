@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "DROP TABLE users",
+    "output": "DROP TABLE foo_users;"
+}

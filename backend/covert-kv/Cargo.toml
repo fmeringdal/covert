@@ -1,0 +1,30 @@
+[package]
+name = "covert-kv"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0"
+bytes = { version = "1.1", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+covert-framework = { path = "../../covert-framework" }
+covert-storage = { path = "../../covert-storage" }
+covert-types = { path = "../../covert-types" }
+hex = "0.4"
+humantime-serde = "1.1"
+rust-embed = "6.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", default-features = false }
+sha2 = "0.10"
+sqlx = { version = "0.6", features = ["chrono", "time", "runtime-tokio-native-tls"] }
+thiserror = "1.0"
+tokio = { version = "1.23", features = ["sync", "rt", "macros"] }
+tracing = "0.1"
+tracing-error = "0.1"
+uuid = { version = "0.8", features = ["serde", "v4"] }
+
+[dev-dependencies]
+http = "0.2"
+tempfile = "3.3"

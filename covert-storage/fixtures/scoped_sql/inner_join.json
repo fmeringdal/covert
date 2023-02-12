@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "SELECT u.uid, ce.cid FROM users AS u JOIN course_enrollement AS ce ON u.uid = ce.uid",
+    "output": "SELECT foo_u.uid, foo_ce.cid FROM foo_users AS foo_u JOIN foo_course_enrollement AS foo_ce ON foo_u.uid = foo_ce.uid;"
+}

@@ -1,0 +1,109 @@
+use std::sync::Arc;
+
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use sqlx::{Pool, Postgres};
+use uuid::Uuid;
+
+use crate::{
+    error::{Error, ErrorType},
+    path_roles::RoleEntry,
+};
+
+use super::Context;
+
+use covert_framework::extract::{Extension, Path};
+use covert_types::{
+    mount::MountConfig,
+    psql::RoleCredentials,
+    response::{LeaseRenewRevokeEndpoint, LeaseResponse, Response},
+};
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RoleInfo {
+    pub username: String,
+    pub role: String,
+}
+
+#[tracing::instrument(skip(b), fields(role_name = name))]
+pub async fn path_role_create_read(
+    Extension(b): Extension<Arc<Context>>,
+    Extension(config): Extension<MountConfig>,
+    Path(name): Path<String>,
+) -> Result<Response, Error> {
+    let role = b
+        .role_repo
+        .get(&name)
+        .await?
+        .ok_or_else(|| ErrorType::RoleNotFound { name: name.clone() })?;
+
+    // Generate the username, password and expiration.
+    let username_suffix = Uuid::new_v4().to_string();
+    let mut username = format!("{name}-{username_suffix}");
+    // PG limits user to 63 characters
+    if username.len() > 63 {
+        username = username[..=63].to_string();
+    }
+    let password = Uuid::new_v4().to_string();
+
+    let ttl = chrono::Duration::from_std(config.default_lease_ttl)
+        .map_err(|_| ErrorType::InternalError(anyhow::Error::msg("Unable to create TTL")))?;
+    let expiration = Utc::now() + ttl;
+    // TODO: correct format
+    // 	Format("2006-01-02 15:04:05-0700")
+    let expiration = expiration.format("%Y-%m-%d %H:%M:%S").to_string();
+
+    // Get our handle
+    let pool = b.pool().await?;
+    create_psql_role(&pool, &role, &username, &password, &expiration).await?;
+
+    // Return the secret
+    let role_info = RoleInfo {
+        username: username.clone(),
+        role: name.clone(),
+    };
+    let creds = RoleCredentials { username, password };
+    let lease =
+        LeaseResponse {
+            renew: LeaseRenewRevokeEndpoint {
+                path: "creds".into(),
+                data: serde_json::to_value(&role_info)?,
+            },
+            revoke: LeaseRenewRevokeEndpoint {
+                path: "creds".into(),
+                data: serde_json::to_value(&role_info)?,
+            },
+            data: serde_json::to_value(&creds)?,
+            ttl: Some(ttl.to_std().map_err(|_| {
+                ErrorType::InternalError(anyhow::Error::msg("Unable to create TTL"))
+            })?),
+        };
+    Ok(Response::Lease(lease))
+}
+
+#[tracing::instrument(skip_all)]
+async fn create_psql_role(
+    pool: &Pool<Postgres>,
+    role: &RoleEntry,
+    username: &str,
+    password: &str,
+    expiration: &str,
+) -> Result<(), Error> {
+    // Start a transaction
+    let mut tx = pool.begin().await?;
+
+    // Execute each query
+    let sql = role
+        .sql
+        .replace("{{name}}", username)
+        .replace("{{password}}", password)
+        .replace("{{expiration}}", expiration);
+    for query in sql.split(';') {
+        sqlx::query(query).execute(&mut tx).await?;
+    }
+
+    // Commit the transaction
+    tx.commit().await?;
+
+    Ok(())
+}

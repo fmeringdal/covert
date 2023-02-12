@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "DELETE FROM users WHERE id = 1",
+    "output": "DELETE FROM foo_users WHERE id = 1;"
+}

@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "DELETE FROM secrets WHERE key = 1 AND version <= (SELECT MAX(version) FROM secrets WHERE key = 1) - 10",
+    "output": "DELETE FROM foo_secrets WHERE key = 1 AND version <= (SELECT MAX(version) FROM foo_secrets WHERE key = 1) - 10;"
+}

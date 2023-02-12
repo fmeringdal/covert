@@ -1,0 +1,12 @@
+[workspace]
+members = [
+    "covert-types",
+    "covert-storage",
+    "covert-framework",
+    "covert-server",
+    "covert-cli",
+    "covert-sdk",
+    "backend/covert-kv",
+    "backend/covert-psql",
+    "backend/covert-userpass-auth",
+]

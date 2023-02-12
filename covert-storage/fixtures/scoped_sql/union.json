@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "SELECT uid FROM users UNION SELECT ou.uid FROM old_users AS ou",
+    "output": "SELECT uid FROM foo_users UNION SELECT foo_ou.uid FROM foo_old_users AS foo_ou;"
+}

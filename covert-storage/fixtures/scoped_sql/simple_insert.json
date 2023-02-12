@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "INSERT INTO users (id, name) VALUES (1, 'foo')",
+    "output": "INSERT INTO foo_users (id, name) VALUES (1, 'foo');"
+}

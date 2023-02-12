@@ -1,0 +1,5 @@
+{
+    "prefix": "foo_",
+    "input": "WITH my_cte AS (SELECT a,b,c FROM T1) SELECT a,c FROM my_cte",
+    "output": "WITH foo_my_cte AS (SELECT a, b, c FROM foo_T1) SELECT a, c FROM foo_my_cte;"
+}
