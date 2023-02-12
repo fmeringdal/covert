@@ -13,7 +13,7 @@ pub struct MigrationScript {
 async fn create_migrate_table(pool: &EncryptedPool) -> Result<(), sqlx::Error> {
     // TODO: is mount_id here the correct type?
     let sql = r#"CREATE TABLE IF NOT EXISTS _backend_storage_migrations(
-        mount_id INTEGER NOT NULL REFERENCES MOUNTS(id),
+        mount_id INTEGER NOT NULL REFERENCES MOUNTS(id) ON DELETE CASCADE ON UPDATE CASCADE,
         version INTEGER NOT NULL,
         description TEXT NOT NULL,
         checksum BLOB NOT NULL,
