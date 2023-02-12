@@ -3,7 +3,7 @@
 ## Unseal Covert
 
 ```sh
-covert operator init
+covert operator init --shares 5 --threshold 3
 covert operator unseal --unseal-keys "<key1>,<key2>,<key3>"
 ```
 

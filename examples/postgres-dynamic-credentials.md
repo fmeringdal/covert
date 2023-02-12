@@ -26,7 +26,7 @@ docker exec -i \
 ## Unseal Covert
 
 ```sh
-covert operator init
+covert operator init --shares 5 --threshold 3
 covert operator unseal --unseal-keys "<key1>,<key2>,<key3>"
 ```
 
@@ -36,7 +36,7 @@ covert secrets enable -n psql -p psql/
 
 covert psql add-role --name foo --mount psql/ --sql "CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}' INHERIT;GRANT ro TO \"{{name}}\"" --revocation-sql "DROP ROLE \"{{name}}\""
 
-covert psql set-connection --conection-url "postgresql://root:rootpassword@127.0.0.1:5432/postgres?sslmode=disable" --mount psql/
+covert psql set-connection --connection-url "postgresql://root:rootpassword@127.0.0.1:5432/postgres?sslmode=disable" --mount psql/
 ```
 
 ## Manage dynamic credentials

@@ -6,7 +6,6 @@ use sqlx::{
     sqlite::{SqliteQueryResult, SqliteRow},
     Pool, Sqlite, Transaction,
 };
-use tempfile::TempDir;
 
 use crate::{
     states::{Sealed, Uninitialized, Unsealed},
@@ -51,9 +50,8 @@ impl<'c> sqlx::Executor<'c> for &EncryptedPool {
         'q: 'e,
         E: 'q + sqlx::Execute<'q, Self::Database>,
     {
-        let pool = match self.pool() {
-            Ok(pool) => pool,
-            Err(_) => return Box::pin(PoolClosedStream),
+        let Ok(pool) = self.pool() else {
+            return Box::pin(PoolClosedStream);
         };
         pool.fetch_many(query)
     }
@@ -162,23 +160,13 @@ impl EncryptedPool {
     /// Creates an unsealed temporary pool which is useful when writing tests.
     #[must_use]
     pub fn new_tmp() -> Self {
-        let tmpdir =
-            TempDir::new().expect("tmp dir to be created and this should only be used for testing");
-        let storage_path = tmpdir
-            .path()
-            .join("db-storage")
-            .to_str()
-            .expect("tmp dir should exist and this should only be used for testing")
-            .to_string();
+        let storage_path = ":memory:".to_string();
         let master_key = create_master_key();
         let pool = create_ecrypted_pool(true, &storage_path, master_key)
             .expect("to create encrypted pool and this should only be used for testing");
 
         Self(OwnedRwLock::new(PoolState::Unsealed(Storage {
-            state: Unsealed {
-                pool,
-                tmpdir: Some(tmpdir),
-            },
+            state: Unsealed { pool },
             storage_path,
         })))
     }
@@ -333,15 +321,7 @@ mod tests {
 
     #[sqlx::test]
     async fn unseal_and_query() {
-        let tmpdir = tempfile::tempdir().unwrap();
-        let file_path = tmpdir
-            .path()
-            .join("db-storage")
-            .to_str()
-            .unwrap()
-            .to_string();
-
-        let pool = EncryptedPool::new(&file_path);
+        let pool = EncryptedPool::new(&":memory:".to_string());
 
         const QUERY: &str = "SELECT count(*) FROM sqlite_master";
 

@@ -35,8 +35,12 @@ impl LeaseStore {
         .bind(le.last_renewal_time)
         .execute(self.pool.as_ref())
         .await
-        .map(|_| ())
         .map_err(Into::into)
+        .and_then(|res| if res.rows_affected() == 1 {
+            Ok(())
+        } else {
+            Err(ErrorType::InternalError(anyhow::Error::msg("failed to insert lease")).into())
+        })
     }
 
     #[tracing::instrument(skip_all, fields(lease_id))]
@@ -68,19 +72,13 @@ impl LeaseStore {
     }
 
     #[tracing::instrument(skip_all, fields(lease_id))]
-    pub async fn delete(&self, lease_id: &str) -> Result<(), Error> {
+    pub async fn delete(&self, lease_id: &str) -> Result<bool, Error> {
         sqlx::query("DELETE FROM LEASES WHERE id = ?")
             .bind(lease_id)
             .execute(self.pool.as_ref())
             .await
             .map_err(Into::into)
-            .and_then(|res| {
-                if res.rows_affected() == 1 {
-                    Ok(())
-                } else {
-                    Err(ErrorType::NotFound(format!("Lease `{lease_id}` not found")).into())
-                }
-            })
+            .map(|res| res.rows_affected() == 1)
     }
 
     #[tracing::instrument(skip_all)]
@@ -123,7 +121,7 @@ mod tests {
 
     #[tokio::test]
     async fn crud() {
-        let pool = Arc::new(pool().await.pool);
+        let pool = Arc::new(pool().await);
         let mount_store = MountStore::new(Arc::clone(&pool));
         let lease_store = LeaseStore::new(Arc::clone(&pool));
 
@@ -200,7 +198,7 @@ mod tests {
         );
 
         // Delete one lease
-        assert!(lease_store.delete(lease_foo_bar.id()).await.is_ok());
+        assert!(lease_store.delete(lease_foo_bar.id()).await.unwrap());
 
         // And it should be gone
         assert_eq!(

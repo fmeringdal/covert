@@ -41,13 +41,16 @@ impl<Req, Res> SyncService<Req, Res> {
         tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
                 let svc = service.clone();
-                let resp = svc.oneshot(message.request).await;
-                if message.tx.send(resp).is_err() {
-                    tracing::error!(
-                        "Failed to notify sync service of the response from the worker"
-                    );
-                }
-                message.notify.notify_one();
+                // Ensure that a slow response does not block other requests
+                tokio::spawn(async move {
+                    let resp = svc.oneshot(message.request).await;
+                    if message.tx.send(resp).is_err() {
+                        tracing::error!(
+                            "Failed to notify sync service of the response from the worker"
+                        );
+                    }
+                    message.notify.notify_one();
+                });
             }
         });
 

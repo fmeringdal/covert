@@ -110,7 +110,7 @@ mod tests {
 
     #[tokio::test]
     async fn crud() {
-        let pool = pool().await.pool;
+        let pool = pool().await;
         let store = PolicyStore::new(Arc::new(pool));
 
         let policy = Policy {
