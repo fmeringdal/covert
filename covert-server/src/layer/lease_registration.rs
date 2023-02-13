@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::Utc;
 use covert_types::{
     entity::EntityAlias,
     error::ApiError,
@@ -83,6 +84,7 @@ where
                         &lease.revoke.data,
                         Some(lease.renew.path),
                         &lease.renew.data,
+                        Utc::now(),
                         chrono::Duration::from_std(ttl).map_err(|_| ApiError::internal_error())?,
                     )?;
                     let lease_id = le.id().to_string();
@@ -135,6 +137,7 @@ where
                                 &revoke_data,
                                 None,
                                 &renew_data,
+                                Utc::now(),
                                 ttl_chrono,
                             )?;
                             let lease_id = lease.id().to_string();

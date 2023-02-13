@@ -15,6 +15,7 @@ pub struct LeaseEntry {
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub last_renewal_time: DateTime<Utc>,
+    pub failed_revocation_attempts: u32,
 }
 
 impl LeaseEntry {
@@ -24,11 +25,11 @@ impl LeaseEntry {
         revoke_data: &T,
         renew_path: Option<String>,
         renew_data: &T,
+        now: DateTime<Utc>,
         ttl: Duration,
     ) -> Result<Self, Error> {
-        let now = Utc::now();
-        let expire_time = now + ttl;
-        let issue_time = now;
+        let expires_at = now + ttl;
+        let issued_at = now;
         let last_renewal_time = now;
 
         let lease_id = format!("{}", Uuid::new_v4());
@@ -44,9 +45,10 @@ impl LeaseEntry {
             revoke_data,
             renew_path,
             renew_data,
-            issued_at: issue_time,
-            expires_at: expire_time,
+            issued_at,
+            expires_at,
             last_renewal_time,
+            failed_revocation_attempts: 0,
         })
     }
 

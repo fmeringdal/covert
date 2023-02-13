@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS LEASES (
     -- Can be NULL for token leases
     renew_path TEXT,
     renew_data TEXT NOT NULL,
+    failed_revocation_attempts INTEGER NOT NULL,
     issued_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
     last_renewal_time TEXT NOT NULL

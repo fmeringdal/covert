@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::min, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use covert_storage::EncryptedPool;
@@ -8,7 +8,6 @@ use crate::{
     LeaseEntry,
 };
 
-#[derive(Debug)]
 pub struct LeaseStore {
     pool: Arc<EncryptedPool>,
 }
@@ -21,8 +20,8 @@ impl LeaseStore {
     #[tracing::instrument(skip_all, fields(lease_id = le.id))]
     pub async fn create(&self, le: &LeaseEntry) -> Result<(), Error> {
         sqlx::query(
-            "INSERT INTO LEASES (id, issued_mount_path, revoke_path, revoke_data, renew_path, renew_data, issued_at, expires_at, last_renewal_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO LEASES (id, issued_mount_path, revoke_path, revoke_data, renew_path, renew_data, issued_at, expires_at, last_renewal_time, failed_revocation_attempts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&le.id)
         .bind(&le.issued_mount_path)
@@ -33,6 +32,7 @@ impl LeaseStore {
         .bind(le.issued_at)
         .bind(le.expires_at)
         .bind(le.last_renewal_time)
+        .bind(le.failed_revocation_attempts)
         .execute(self.pool.as_ref())
         .await
         .map_err(Into::into)
@@ -40,6 +40,64 @@ impl LeaseStore {
             Ok(())
         } else {
             Err(ErrorType::InternalError(anyhow::Error::msg("failed to insert lease")).into())
+        })
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub async fn pull(&self, count: u32, before: DateTime<Utc>) -> Result<Vec<LeaseEntry>, Error> {
+        let count = min(count, 100);
+
+        sqlx::query_as(
+            "SELECT * FROM LEASES
+                WHERE expires_at <= $1 
+                ORDER BY expires_at
+                LIMIT $2",
+        )
+        .bind(before)
+        .bind(count)
+        .fetch_all(self.pool.as_ref())
+        .await
+        .map_err(Into::into)
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub async fn peek(&self) -> Result<Option<LeaseEntry>, Error> {
+        sqlx::query_as(
+            "SELECT * FROM LEASES
+                ORDER BY expires_at ASC
+                LIMIT 1",
+        )
+        .fetch_optional(self.pool.as_ref())
+        .await
+        .map_err(Into::into)
+    }
+
+    #[tracing::instrument(skip_all, fields(lease_id))]
+    pub async fn increment_failed_revocation_attempts(
+        &self,
+        lease_id: &str,
+        expires_at: DateTime<Utc>,
+    ) -> Result<(), Error> {
+        sqlx::query(
+            "UPDATE LEASES 
+            SET failed_revocation_attempts = failed_revocation_attempts + 1,
+                expires_at = $1
+            WHERE id = $2",
+        )
+        .bind(expires_at)
+        .bind(lease_id)
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(Into::into)
+        .and_then(|res| {
+            if res.rows_affected() == 1 {
+                Ok(())
+            } else {
+                Err(ErrorType::NotFound(format!(
+                    "failed to increment failed revocation attempt for lease: `{lease_id}`"
+                ))
+                .into())
+            }
         })
     }
 
@@ -111,7 +169,7 @@ impl LeaseStore {
 
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
+    use chrono::{Duration, Utc};
     use covert_types::{backend::BackendType, mount::MountEntry};
     use uuid::Uuid;
 
@@ -134,6 +192,11 @@ mod tests {
         };
         mount_store.create(&userpass_mount).await.unwrap();
 
+        let expires_at = Utc::now();
+
+        // Nothing in beginning
+        assert!(lease_store.peek().await.unwrap().is_none());
+
         // Create some leases
         let mut lease_foo_bar = LeaseEntry {
             id: "psql/foo/bar".into(),
@@ -141,24 +204,47 @@ mod tests {
             revoke_path: Some("psql/revoke-entry".into()),
             renew_data: "data".into(),
             renew_path: Some("psql/renew-entry".into()),
-            expires_at: Utc::now(),
+            expires_at,
             issued_at: Utc::now(),
             issued_mount_path: userpass_mount.path.clone(),
             last_renewal_time: Utc::now(),
+            failed_revocation_attempts: 0,
         };
         assert!(lease_store.create(&lease_foo_bar).await.is_ok());
-        let lease_bar_foo = LeaseEntry {
+        assert_eq!(
+            lease_store.peek().await.unwrap(),
+            Some(lease_foo_bar.clone())
+        );
+
+        let mut lease_bar_foo = LeaseEntry {
             id: "psql/bar/foo".into(),
             revoke_data: "data".into(),
             revoke_path: Some("psql/revoke-entry".into()),
             renew_data: "data".into(),
             renew_path: Some("psql/renew-entry".into()),
-            expires_at: Utc::now(),
+            expires_at: lease_foo_bar.expires_at - Duration::milliseconds(1),
             issued_at: Utc::now(),
             issued_mount_path: userpass_mount.path.clone(),
             last_renewal_time: Utc::now(),
+            failed_revocation_attempts: 0,
         };
         assert!(lease_store.create(&lease_bar_foo).await.is_ok());
+        assert_eq!(
+            lease_store.peek().await.unwrap(),
+            Some(lease_bar_foo.clone())
+        );
+
+        // Pull
+        assert_eq!(
+            lease_store.pull(100, expires_at).await.unwrap(),
+            vec![lease_bar_foo.clone(), lease_foo_bar.clone()]
+        );
+        assert_eq!(lease_store.pull(1, expires_at).await.unwrap().len(), 1);
+        assert!(lease_store
+            .pull(100, expires_at - Duration::seconds(1))
+            .await
+            .unwrap()
+            .is_empty(),);
 
         // List all
         assert_eq!(
@@ -204,6 +290,28 @@ mod tests {
         assert_eq!(
             lease_store.list().await.unwrap(),
             vec![lease_bar_foo.clone()]
+        );
+
+        // Increment on failure
+        lease_bar_foo.expires_at += Duration::seconds(10);
+        lease_bar_foo.failed_revocation_attempts += 1;
+        assert!(lease_store
+            .increment_failed_revocation_attempts(lease_bar_foo.id(), lease_bar_foo.expires_at)
+            .await
+            .is_ok());
+
+        let lease_bar_foo_from_store = lease_store
+            .lookup(lease_bar_foo.id())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            lease_bar_foo.expires_at,
+            lease_bar_foo_from_store.expires_at
+        );
+        assert_eq!(
+            lease_bar_foo.failed_revocation_attempts,
+            lease_bar_foo_from_store.failed_revocation_attempts
         );
     }
 }

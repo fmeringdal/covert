@@ -64,6 +64,15 @@ impl ApiError {
     }
 
     #[must_use]
+    pub fn timeout() -> Self {
+        Self {
+            error: anyhow::Error::msg("Request timed out"),
+            status_code: StatusCode::REQUEST_TIMEOUT,
+            span_trace: Some(SpanTrace::capture()),
+        }
+    }
+
+    #[must_use]
     pub fn invalid_state(current_state: VaultState) -> Self {
         Self {
             error: anyhow::Error::msg(format!(

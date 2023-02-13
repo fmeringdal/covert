@@ -11,6 +11,7 @@ pub struct RevokeTokenParams {
     pub token: Token,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn handle_token_revocation(
     Extension(token_store): Extension<Arc<TokenStore>>,
     Json(body): Json<RevokeTokenParams>,
