@@ -513,14 +513,14 @@ mod tests {
     pub struct RequestRecorder(RwLock<Vec<RequestInfo>>);
 
     async fn advance(clock: &TestClock, duration: Duration) {
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         clock.advance(duration.num_milliseconds());
+        // Yield and give some time for expiration manager to wake up and revoke
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
 
     async fn advance_to(clock: &TestClock, duration: DateTime<Utc>) {
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         clock.set(duration.timestamp_millis());
+        // Yield and give some time for expiration manager to wake up and revoke
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
 
