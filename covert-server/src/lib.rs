@@ -29,6 +29,7 @@ use tracing_error::ErrorLayer;
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 use crate::{
+    expiration_manager::clock::SystemClock,
     layer::{
         auth_service::AuthServiceLayer, core_extension::CoreStateInjectorLayer,
         lease_registration::LeaseRegistrationLayer, request_mapper::LogicalRequestResponseLayer,
@@ -83,6 +84,7 @@ pub async fn start(config: Config) -> Result<(), anyhow::Error> {
         Arc::clone(&router),
         lease_store,
         mount_store.clone(),
+        SystemClock::new(),
     ));
 
     let core = Arc::new(Core::new(
