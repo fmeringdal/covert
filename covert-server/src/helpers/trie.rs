@@ -31,9 +31,7 @@ impl<T> Node<T> {
 
     fn remove(&mut self, mut chars: Chars) -> bool {
         if let Some(char) = chars.next() {
-            let child = if let Some(child) = self.children.get_mut(&char) {
-                child
-            } else {
+            let Some(child) = self.children.get_mut(&char) else {
                 return false;
             };
             if child.remove(chars) {
@@ -139,13 +137,11 @@ impl<T> Trie<T> {
     #[allow(unused)]
     pub fn remove(&mut self, path: &str) -> bool {
         let mut chars = path.chars();
-        let first_char = match chars.next() {
-            Some(c) => c,
-            None => return false,
+        let Some(first_char) = chars.next() else {
+            return false;
         };
-        let root = match self.root.get_mut(&first_char) {
-            Some(n) => n,
-            None => return false,
+        let Some(root) = self.root.get_mut(&first_char) else {
+            return false;
         };
         if root.remove(chars) {
             self.root.remove(&first_char).is_some()

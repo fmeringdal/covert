@@ -124,7 +124,7 @@ mod tests {
 
     #[tokio::test]
     async fn crud() {
-        let pool = Arc::new(pool().await.pool);
+        let pool = Arc::new(pool().await);
         let policy_store = Arc::new(PolicyStore::new(Arc::clone(&pool)));
         let identity_store = IdentityStore::new(Arc::clone(&pool));
         let mount_store = MountStore::new(Arc::clone(&pool));

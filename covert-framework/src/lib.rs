@@ -16,11 +16,11 @@ use covert_storage::{
     migrator::{migrate, MigrationError, MigrationScript},
     EncryptedPool,
 };
-use sync_service::SyncService;
 use tower::ServiceExt;
 
 pub use method_router::*;
 pub use router::Router;
+pub use sync_service::SyncService;
 
 use covert_types::{
     backend::{BackendCategory, BackendType},

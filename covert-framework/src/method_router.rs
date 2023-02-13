@@ -71,9 +71,8 @@ impl Service<Request> for Route {
             return Box::pin(async move { Err(ApiError::invalid_state(state)) });
         }
 
-        let policy = match req.extensions.get::<AuthPolicy>() {
-            Some(auth) => auth,
-            None => return Box::pin(async { Err(ApiError::unauthorized()) }),
+        let Some(policy) = req.extensions.get::<AuthPolicy>() else {
+            return Box::pin(async { Err(ApiError::unauthorized()) });
         };
         let auth = match self.config.policy {
             AuthPolicy::Root => *policy == AuthPolicy::Root,

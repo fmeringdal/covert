@@ -108,9 +108,8 @@ impl Service<Request> for Router<Ready> {
         } else {
             format!("/{}", req.path)
         };
-        let matched_router = match self.router.at(&prefixed_path) {
-            Ok(r) => r,
-            Err(_) => return Box::pin(async { Err(ApiError::not_found()) }),
+        let Ok(matched_router) =  self.router.at(&prefixed_path) else {
+            return Box::pin(async { Err(ApiError::not_found()) });
         };
         req.params = matched_router
             .params

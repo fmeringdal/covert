@@ -139,7 +139,6 @@ impl MountStore {
 #[cfg(test)]
 pub mod tests {
     use rust_embed::RustEmbed;
-    use tempfile::TempDir;
 
     use crate::Core;
 
@@ -149,34 +148,17 @@ pub mod tests {
     #[folder = "migrations/"]
     struct Migrations;
 
-    pub struct TestContext {
-        pub pool: EncryptedPool,
-        // Stored here just to prevent drop that would delete the storage file
-        #[allow(dead_code)]
-        pub dir: TempDir,
-    }
-
-    pub async fn pool() -> TestContext {
-        let tmpdir = tempfile::tempdir().unwrap();
-        let file_path = tmpdir
-            .path()
-            .join("covert-db-storage")
-            .to_str()
-            .unwrap()
-            .to_string();
-
-        let pool = EncryptedPool::new(&file_path);
-        let master_key = pool.initialize().unwrap().unwrap();
-        pool.unseal(master_key).unwrap();
+    pub async fn pool() -> EncryptedPool {
+        let pool = EncryptedPool::new_tmp();
 
         Core::migrate::<Migrations>(&pool).await.unwrap();
 
-        TestContext { pool, dir: tmpdir }
+        pool
     }
 
     #[tokio::test]
     async fn crud() {
-        let pool = pool().await.pool;
+        let pool = pool().await;
         let store = MountStore::new(Arc::new(pool));
 
         let mut me = MountEntry {

@@ -2,8 +2,8 @@ use std::path::Path;
 
 use rand::Rng;
 use sqlx::{
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous},
-    Pool, Sqlite, SqlitePool,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+    Pool, Sqlite,
 };
 
 use crate::states::{Sealed, Uninitialized, Unsealed};
@@ -58,7 +58,7 @@ impl Storage<Sealed> {
     pub fn unseal(self, key: String) -> Result<Storage<Unsealed>, Self> {
         create_ecrypted_pool(false, &self.storage_path, key)
             .map(|pool| Storage {
-                state: Unsealed { pool, tmpdir: None },
+                state: Unsealed { pool },
                 storage_path: self.storage_path.clone(),
             })
             .map_err(|_| self)
@@ -112,7 +112,12 @@ pub(crate) fn create_ecrypted_pool(
         async fn connect_and_verify(
             opts: SqliteConnectOptions,
         ) -> Result<Pool<Sqlite>, sqlx::Error> {
-            let pool = SqlitePool::connect_with(opts).await?;
+            let pool = SqlitePoolOptions::new()
+                // TODO: allow configuration of these values
+                .min_connections(1)
+                .max_connections(1)
+                .connect_with(opts)
+                .await?;
 
             // Verify key
             sqlx::query("SELECT count(*) FROM sqlite_master")

@@ -81,24 +81,13 @@ mod tests {
     use std::sync::Arc;
 
     use covert_storage::{migrator::migrate_backend, EncryptedPool};
-    use tempfile::TempDir;
 
     use crate::Migrations;
 
     use super::*;
 
-    pub async fn setup_context() -> (BackendStoragePool, TempDir) {
-        let tmpdir = tempfile::tempdir().unwrap();
-        let file_path = tmpdir
-            .path()
-            .join("db-storage")
-            .to_str()
-            .unwrap()
-            .to_string();
-
-        let pool = Arc::new(EncryptedPool::new(&file_path));
-        let master_key = pool.initialize().unwrap().unwrap();
-        pool.unseal(master_key.clone()).unwrap();
+    pub async fn pool() -> BackendStoragePool {
+        let pool = Arc::new(EncryptedPool::new_tmp());
 
         let storage = BackendStoragePool::new(
             "foo".into(),
@@ -108,12 +97,12 @@ mod tests {
 
         migrate_backend::<Migrations>(&storage).await.unwrap();
 
-        (storage, tmpdir)
+        storage
     }
 
     #[sqlx::test]
     async fn crud() {
-        let pool = setup_context().await.0;
+        let pool = pool().await;
         let store = UsersRepo::new(pool);
 
         let user = User {

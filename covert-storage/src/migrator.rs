@@ -215,15 +215,7 @@ mod tests {
 
     #[tokio::test]
     async fn migration_works() {
-        let tmpdir = tempfile::tempdir().unwrap();
-        let file_path = tmpdir
-            .path()
-            .join("db-storage")
-            .to_str()
-            .unwrap()
-            .to_string();
-
-        let pool = EncryptedPool::new(&file_path);
+        let pool = EncryptedPool::new(&":memory:".to_string());
         let master_key = pool.initialize().unwrap().unwrap();
         pool.unseal(master_key).unwrap();
 
