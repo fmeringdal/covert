@@ -5,7 +5,11 @@ use crate::error::{Error, ErrorType};
 use super::{path_role_create::RoleInfo, Context};
 use chrono::Utc;
 use covert_framework::extract::{Extension, Json};
-use covert_types::{methods::psql::RenewLeaseResponse, mount::MountConfig, response::Response};
+use covert_types::{
+    methods::{psql::RenewLeaseResponse, RenewLeaseParams},
+    mount::MountConfig,
+    response::Response,
+};
 use tracing::debug;
 
 #[tracing::instrument(skip(b))]
@@ -42,18 +46,19 @@ pub async fn secret_creds_revoke(
 pub async fn secret_creds_renew(
     Extension(b): Extension<Arc<Context>>,
     Extension(config): Extension<MountConfig>,
-    Json(body): Json<RoleInfo>,
+    Json(body): Json<RenewLeaseParams<String>>,
 ) -> Result<Response, Error> {
+    let data: RoleInfo = serde_json::from_str(&body.data)?;
+
     debug!("renewing creds");
     b.role_repo
-        .get(&body.role)
+        .get(&data.role)
         .await?
         .ok_or_else(|| ErrorType::RoleNotFound {
-            name: body.role.clone(),
+            name: data.role.clone(),
         })?;
 
-    let std_ttl = config.default_lease_ttl;
-    let ttl = chrono::Duration::from_std(std_ttl)
+    let ttl = chrono::Duration::from_std(body.ttl)
         .map_err(|_| ErrorType::InternalError(anyhow::Error::msg("Unable to create TTL")))?;
     let expiration = Utc::now() + ttl;
     // TODO: correct format
@@ -66,11 +71,11 @@ pub async fn secret_creds_renew(
     // TODO: move role to argument to avoid sql injection
     sqlx::query(&format!(
         "ALTER ROLE \"{}\" VALID UNTIL '{expiration}'",
-        body.username
+        data.username
     ))
     .execute(&*pool)
     .await?;
 
-    let resp = RenewLeaseResponse { ttl: std_ttl };
+    let resp = RenewLeaseResponse { ttl: body.ttl };
     Response::raw(resp).map_err(Into::into)
 }

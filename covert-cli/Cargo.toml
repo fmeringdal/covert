@@ -11,6 +11,7 @@ edition = "2021"
 covert-sdk = { path = "../covert-sdk", version = "0.1.1" }
 covert-system = { path = "../covert-server", version = "0.1.1" }
 clap = { version = "4.1", features = ["derive", "cargo", "env"] }
+humantime = "2.1"
 serde_json = "1.0"
 serde = { version = "1", default-features = false }
 tempfile = "3.3"

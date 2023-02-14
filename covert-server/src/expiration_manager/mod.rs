@@ -9,8 +9,10 @@ use chrono::Duration;
 use covert_types::auth::AuthPolicy;
 use covert_types::error::ApiError;
 use covert_types::methods::psql::RenewLeaseResponse;
+use covert_types::methods::RenewLeaseParams;
 use covert_types::request::{Operation, Request};
 use covert_types::state::VaultState;
+use covert_types::ttl::calculate_ttl;
 use futures::stream::FuturesOrdered;
 use futures::{Future, StreamExt};
 use hyper::http;
@@ -188,7 +190,11 @@ impl ExpirationManager {
     }
 
     /// Renew a lease by its id.
-    pub async fn renew_lease_entry(&self, lease_id: &str) -> Result<LeaseEntry, Error> {
+    pub async fn renew_lease_entry(
+        &self,
+        lease_id: &str,
+        ttl: Option<std::time::Duration>,
+    ) -> Result<LeaseEntry, Error> {
         let mut le = self
             .lease_store
             .lookup(lease_id)
@@ -203,6 +209,13 @@ impl ExpirationManager {
             })?
             .config;
 
+        let ttl =
+            calculate_ttl(self.clock.now(), le.issued_at, &mount_config, ttl).map_err(|_| {
+                ErrorType::InternalError(anyhow::Error::msg(
+                    "Failed to calculate TTL when renewing lease",
+                ))
+            })?;
+
         // Perform renewal
         let mut extensions = http::Extensions::new();
         extensions.insert(AuthPolicy::Root);
@@ -216,11 +229,21 @@ impl ExpirationManager {
                 || "sys/token/renew".into(),
                 |renew_path| format!("{}{renew_path}", le.issued_mount_path),
             );
+
+        let data = RenewLeaseParams {
+            ttl: ttl
+                .to_std()
+                .map_err(|_| ErrorType::BadRequest("Bad renew TTL".into()))?,
+            data: le.renew_data.clone(),
+        };
+        let data = serde_json::to_vec(&data)
+            .map_err(|_| ErrorType::BadRequest("Bad renew payload".into()))?;
+
         let req = Request {
             id: Uuid::default(),
             operation: Operation::Renew,
             path: renew_path,
-            data: le.renew_data.clone().into(),
+            data: data.into(),
             extensions,
             token: None,
             is_sudo: true,
@@ -237,19 +260,23 @@ impl ExpirationManager {
                 let resp = resp.response.data::<RenewLeaseResponse>().map_err(|_| {
                     ErrorType::InternalError(anyhow::Error::msg("Unexpected renew response"))
                 })?;
-                let ttl = if resp.ttl > mount_config.max_lease_ttl {
-                    mount_config.max_lease_ttl
-                } else {
-                    resp.ttl
-                };
 
-                le.expires_at = self.clock.now()
-                    + chrono::Duration::from_std(ttl).map_err(|_| {
-                        ErrorType::InternalError(anyhow::Error::msg(
-                            "Unable to create TTL from renew response",
-                        ))
-                    })?;
-                le.last_renewal_time = self.clock.now();
+                let ttl = calculate_ttl(
+                    self.clock.now(),
+                    le.issued_at,
+                    &mount_config,
+                    Some(resp.ttl),
+                )
+                .map_err(|_| {
+                    ErrorType::InternalError(anyhow::Error::msg(
+                        "Failed to calculate TTL when renewing lease",
+                    ))
+                })?;
+
+                let now = self.clock.now();
+
+                le.expires_at = now + ttl;
+                le.last_renewal_time = now;
                 self.lease_store
                     .renew(lease_id, le.expires_at, le.last_renewal_time)
                     .await?;
@@ -803,10 +830,14 @@ mod tests {
         tokio::time::sleep(std::time::Duration::ZERO).await;
 
         // Setup system mount
+        let mount_config = MountConfig {
+            max_lease_ttl: std::time::Duration::from_secs(3600 * 24),
+            ..Default::default()
+        };
         let me = MountEntry {
             uuid: Uuid::new_v4(),
             backend_type: BackendType::Postgres,
-            config: MountConfig::default(),
+            config: mount_config,
             path: "psql/".into(),
         };
         mount_store.create(&me).await.unwrap();
@@ -857,7 +888,7 @@ mod tests {
         advance_to(&clock, le.expires_at - Duration::hours(1)).await;
 
         // Renew
-        let new_le = exp_m.renew_lease_entry(le.id()).await.unwrap();
+        let new_le = exp_m.renew_lease_entry(le.id(), None).await.unwrap();
         let leases = lease_store.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
         let new_expire_time = new_le.expires_at;

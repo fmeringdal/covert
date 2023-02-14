@@ -37,7 +37,7 @@
 //! covert auth list
 //! ```
 
-use std::{error::Error, str::FromStr};
+use std::{error::Error, str::FromStr, time::Duration};
 
 use clap::{arg, command, Args, Parser, Subcommand};
 use covert_sdk::{
@@ -292,7 +292,11 @@ pub enum LeasesSubcommand {
     #[command(about = "revoke lease")]
     Revoke { lease_id: String },
     #[command(about = "renew lease")]
-    Renew { lease_id: String },
+    Renew {
+        lease_id: String,
+        #[arg(long)]
+        ttl: Option<humantime::Duration>,
+    },
     #[command(about = "lookup lease")]
     Lookup { lease_id: String },
     #[command(about = "revoke leases by mount path prefix")]
@@ -371,10 +375,12 @@ pub enum PsqlSubcommand {
     },
     #[command(about = "create credentials for a role")]
     Creds {
-        #[arg(short, long)]
+        #[arg(short, long, help = "Role to generate credentials for")]
         name: String,
-        #[arg(short, long)]
+        #[arg(short, long, help = "Path to the psql secrets engine mount")]
         mount: String,
+        #[arg(long, help = "Time to live for credentials")]
+        ttl: Option<humantime::Duration>,
     },
     #[command(about = "add a role")]
     AddRole {
@@ -703,8 +709,9 @@ async fn main() {
                 let resp = sdk.psql.read_connection(&mount).await;
                 handle_resp(resp);
             }
-            PsqlSubcommand::Creds { name, mount } => {
-                let resp = sdk.psql.create_credentials(&mount, &name).await;
+            PsqlSubcommand::Creds { name, mount, ttl } => {
+                let ttl = ttl.map(|ttl| Duration::from_millis(ttl.as_millis() as u64));
+                let resp = sdk.psql.create_credentials(&mount, &name, ttl).await;
                 handle_resp(resp);
             }
             PsqlSubcommand::AddRole {
@@ -772,8 +779,9 @@ async fn main() {
                 let resp = sdk.lease.revoke(&lease_id).await;
                 handle_resp(resp);
             }
-            LeasesSubcommand::Renew { lease_id } => {
-                let resp = sdk.lease.renew(&lease_id).await;
+            LeasesSubcommand::Renew { lease_id, ttl } => {
+                let ttl = ttl.map(|ttl| Duration::from_millis(ttl.as_millis() as u64));
+                let resp = sdk.lease.renew(&lease_id, ttl).await;
                 handle_resp(resp);
             }
             LeasesSubcommand::Lookup { lease_id } => {

@@ -12,11 +12,13 @@ use crate::{
 
 use super::Context;
 
-use covert_framework::extract::{Extension, Path};
+use covert_framework::extract::{Extension, Json, Path};
 use covert_types::{
+    methods::psql::CreateRoleCredsParams,
     mount::MountConfig,
     psql::RoleCredentials,
     response::{LeaseRenewRevokeEndpoint, LeaseResponse, Response},
+    ttl::calculate_ttl,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -26,9 +28,10 @@ pub struct RoleInfo {
 }
 
 #[tracing::instrument(skip(b), fields(role_name = name))]
-pub async fn path_role_create_read(
+pub async fn generate_role_credentials(
     Extension(b): Extension<Arc<Context>>,
     Extension(config): Extension<MountConfig>,
+    Json(params): Json<CreateRoleCredsParams>,
     Path(name): Path<String>,
 ) -> Result<Response, Error> {
     let role = b
@@ -46,9 +49,13 @@ pub async fn path_role_create_read(
     }
     let password = Uuid::new_v4().to_string();
 
-    let ttl = chrono::Duration::from_std(config.default_lease_ttl)
-        .map_err(|_| ErrorType::InternalError(anyhow::Error::msg("Unable to create TTL")))?;
-    let expiration = Utc::now() + ttl;
+    let now = Utc::now();
+    let issued_at = now;
+    let ttl = calculate_ttl(now, issued_at, &config, params.ttl)
+        .map_err(|_| ErrorType::InternalError(anyhow::Error::msg("Unable to calculate TTL")))?;
+
+    let expiration = now + ttl;
+
     // TODO: correct format
     // 	Format("2006-01-02 15:04:05-0700")
     let expiration = expiration.format("%Y-%m-%d %H:%M:%S").to_string();
