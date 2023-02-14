@@ -1,8 +1,8 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use clap::Subcommand;
 use covert_sdk::{
-    mounts::{BackendType, CreateMountParams},
+    mounts::{BackendType, CreateMountParams, MountConfig, UpdateMountParams},
     Client,
 };
 
@@ -28,6 +28,15 @@ pub enum AuthSubcommand {
         #[arg(help = "path of mount to disable")]
         path: String,
     },
+    #[command(about = "tune auth method")]
+    Tune {
+        #[arg(help = "path of mount to tune")]
+        path: String,
+        #[arg(long, help = "the default TTL for token issed by this auth method")]
+        default_lease_ttl: Option<humantime::Duration>,
+        #[arg(long, help = "the default TTL for token issed by this auth method")]
+        max_lease_ttl: Option<humantime::Duration>,
+    },
     #[command(about = "list auth methods")]
     List,
 }
@@ -36,7 +45,7 @@ impl Auth {
     pub async fn handle(self, sdk: &Client) {
         match self.subcommand {
             AuthSubcommand::Enable { name, path } => {
-                let path = path.unwrap_or_else(|| format!("auth/{name}/"));
+                let path = path.unwrap_or_else(|| format!("auth/{}/", name.to_lowercase()));
                 let resp = sdk
                     .mount
                     .create(
@@ -51,6 +60,22 @@ impl Auth {
             }
             AuthSubcommand::Disable { path } => {
                 let resp = sdk.mount.remove(&path).await;
+                handle_resp(resp);
+            }
+            AuthSubcommand::Tune {
+                path,
+                default_lease_ttl,
+                max_lease_ttl,
+            } => {
+                let mut config = MountConfig::default();
+                if let Some(ttl) = default_lease_ttl {
+                    config.default_lease_ttl = Duration::from_millis(ttl.as_millis() as u64);
+                }
+                if let Some(ttl) = max_lease_ttl {
+                    config.max_lease_ttl = Duration::from_millis(ttl.as_millis() as u64);
+                }
+
+                let resp = sdk.mount.update(&path, &UpdateMountParams { config }).await;
                 handle_resp(resp);
             }
             AuthSubcommand::List => {
