@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 pub use covert_types::backend::{BackendCategory, BackendType};
-use covert_types::methods::system::DisbaleMountResponse;
 pub use covert_types::methods::system::{
-    CreateMountParams, CreateMountResponse, MountsListResponse, UpdateMountParams,
-    UpdateMountResponse,
+    CreateMountParams, CreateMountResponse, DisbaleMountResponse, MountsListResponse,
+    UpdateMountParams, UpdateMountResponse,
 };
+pub use covert_types::mount::MountConfig;
 
 use crate::base::BaseClient;
 

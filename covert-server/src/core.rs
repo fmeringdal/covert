@@ -242,22 +242,31 @@ impl Core {
             .ok_or_else(|| ErrorType::MountNotFound { path: path.into() })?;
         me.config = config;
         self.mounts_store.set_config(me.uuid, &me.config).await?;
+        self.router.update_mount(path, me.config.clone()).await?;
 
         Ok(me)
     }
 
     #[tracing::instrument(skip(self))]
     pub async fn remove_mount(&self, path: &str) -> Result<MountEntry, Error> {
-        // Check that it is not system
-        // Revoke all leases
-        // Remove from router
-        // Remove mount from mount store
-        // TODO: Remove all the tables for that mount
+        // In case it is not in the router we will still try to remove it from the
+        // mounts store
+        if let Some(re) = self.router.get(path).await {
+            if re.backend().variant() == BackendType::System {
+                return Err(ErrorType::InvalidMountType {
+                    variant: BackendType::System,
+                }
+                .into());
+            }
+        }
+
         let me = self
             .mounts_store
             .get_by_path(path)
             .await?
             .ok_or_else(|| ErrorType::MountNotFound { path: path.into() })?;
+
+        // Same check as above just for good measure!
         if me.backend_type == BackendType::System {
             return Err(ErrorType::InvalidMountType {
                 variant: BackendType::System,

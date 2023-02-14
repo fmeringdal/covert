@@ -7,9 +7,9 @@ use strum::{Display, EnumString};
 pub enum BackendType {
     #[strum(ascii_case_insensitive, serialize = "kv")]
     Kv,
-    #[strum(ascii_case_insensitive, serialize = "postgres", serialize = "psql")]
+    #[strum(ascii_case_insensitive, serialize = "psql")]
     Postgres,
-    #[strum(ascii_case_insensitive, serialize = "sys", serialize = "system")]
+    #[strum(ascii_case_insensitive, serialize = "system")]
     System,
     #[strum(ascii_case_insensitive, serialize = "userpass")]
     Userpass,

@@ -113,10 +113,16 @@ impl Router {
         Ok(())
     }
 
-    pub async fn update_mount(&self, path: &str, config: MountConfig) -> Result<(), ()> {
+    #[tracing::instrument(skip(self))]
+    pub async fn update_mount(&self, path: &str, config: MountConfig) -> Result<(), Error> {
         let mut trie = self.root.write().await;
 
-        let re = trie.get(path).map(Arc::clone).ok_or(())?;
+        let re = trie
+            .get(path)
+            .map(Arc::clone)
+            .ok_or_else(|| ErrorType::MountNotFound {
+                path: path.to_string(),
+            })?;
         let mut old_config = re.config.write();
         *old_config = config;
         drop(old_config);
@@ -128,6 +134,11 @@ impl Router {
     pub async fn remove(&self, path: &str) -> bool {
         let mut trie = self.root.write().await;
         trie.remove(path)
+    }
+
+    pub async fn get(&self, path: &str) -> Option<Arc<RouteEntry>> {
+        let trie = self.root.read().await;
+        trie.get(path).map(Arc::clone)
     }
 }
 
