@@ -98,7 +98,7 @@ pub struct MountsListResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DisbaleMountResponse {
+pub struct DisableMountResponse {
     pub mount: MountsListItemResponse,
 }
 
