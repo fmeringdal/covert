@@ -51,9 +51,11 @@ pub struct BackendStoragePool {
 }
 
 impl BackendStoragePool {
-    pub fn new(name: &str, uuid: &str, pool: Arc<EncryptedPool>) -> Self {
-        let prefix = format!("{name}_{uuid}_");
-        Self { prefix, pool }
+    pub fn new(prefix: &str, pool: Arc<EncryptedPool>) -> Self {
+        Self {
+            prefix: prefix.to_string(),
+            pool,
+        }
     }
 
     /// Construct a prefixed query.

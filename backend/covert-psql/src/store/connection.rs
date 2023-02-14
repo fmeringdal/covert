@@ -62,11 +62,7 @@ pub mod tests {
     pub async fn setup_context() -> BackendStoragePool {
         let pool = Arc::new(EncryptedPool::new_tmp());
 
-        let storage = BackendStoragePool::new(
-            "foo".into(),
-            "629d847db7c9492ba69aed520cd1997d".into(),
-            pool,
-        );
+        let storage = BackendStoragePool::new("foo_", pool);
 
         migrate_backend::<Migrations>(&storage).await.unwrap();
 

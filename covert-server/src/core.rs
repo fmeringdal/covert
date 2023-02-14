@@ -215,7 +215,7 @@ impl Core {
         variant: BackendType,
         config: MountConfig,
     ) -> Result<(Arc<Backend>, String), Error> {
-        let backend_storage = self.storeage_pool_for_backend(&uuid, variant);
+        let backend_storage = self.storage_pool_for_backend(variant, &uuid);
 
         let prefix = backend_storage.prefix().to_string();
         let backend = Arc::new(self.new_backend(variant, backend_storage).await?);
@@ -226,12 +226,9 @@ impl Core {
         Ok((backend, prefix))
     }
 
-    fn storeage_pool_for_backend(&self, id: &Uuid, variant: BackendType) -> BackendStoragePool {
-        BackendStoragePool::new(
-            &variant.to_string(),
-            &id.to_string().replace('-', ""),
-            Arc::clone(&self.encrypted_pool),
-        )
+    fn storage_pool_for_backend(&self, variant: BackendType, id: &Uuid) -> BackendStoragePool {
+        let prefix = format!("{variant}_{id}_");
+        BackendStoragePool::new(&prefix, Arc::clone(&self.encrypted_pool))
     }
 
     pub async fn update_mount(&self, path: &str, config: MountConfig) -> Result<MountEntry, Error> {
@@ -283,7 +280,7 @@ impl Core {
         self.mounts_store.remove_by_path(path).await?;
 
         // Delete all storage for the mount
-        let storage = self.storeage_pool_for_backend(&me.uuid, me.backend_type);
+        let storage = self.storage_pool_for_backend(me.backend_type, &me.uuid);
         let storage_prefix = storage.prefix();
         let tables = crate::helpers::sqlite::get_resources_by_prefix(
             self.encrypted_pool.as_ref(),
