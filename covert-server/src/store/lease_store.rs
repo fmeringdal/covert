@@ -148,8 +148,8 @@ impl LeaseStore {
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn list_by_mount(&self, mount_path: &str) -> Result<Vec<LeaseEntry>, Error> {
-        let prefix_pattern = format!("{mount_path}%");
+    pub async fn list_by_mount_prefix(&self, path_prefix: &str) -> Result<Vec<LeaseEntry>, Error> {
+        let prefix_pattern = format!("{path_prefix}%");
         sqlx::query_as("SELECT * FROM LEASES WHERE issued_mount_path LIKE ?")
             .bind(prefix_pattern)
             .fetch_all(self.pool.as_ref())
@@ -255,13 +255,16 @@ mod tests {
         // List by mount path prefix
         assert_eq!(
             lease_store
-                .list_by_mount(&userpass_mount.path)
+                .list_by_mount_prefix(&userpass_mount.path)
                 .await
                 .unwrap(),
             vec![lease_foo_bar.clone(), lease_bar_foo.clone()]
         );
         assert_eq!(
-            lease_store.list_by_mount("random_foo_bar/").await.unwrap(),
+            lease_store
+                .list_by_mount_prefix("random_foo_bar/")
+                .await
+                .unwrap(),
             vec![]
         );
 

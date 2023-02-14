@@ -98,7 +98,7 @@ impl ExpirationManager {
         &self,
         prefix: &str,
     ) -> Result<Vec<LeaseEntry>, Error> {
-        let leases = self.lease_store.list_by_mount(prefix).await?;
+        let leases = self.lease_store.list_by_mount_prefix(prefix).await?;
 
         let mut revoke_futures = FuturesOrdered::new();
 
@@ -125,7 +125,7 @@ impl ExpirationManager {
 
     /// List all leases issued by mounts under a given path prefix.
     pub async fn list_by_mount_prefix(&self, prefix: &str) -> Result<Vec<LeaseEntry>, Error> {
-        self.lease_store.list_by_mount(prefix).await
+        self.lease_store.list_by_mount_prefix(prefix).await
     }
 
     /// Lookup a lease by its id.
