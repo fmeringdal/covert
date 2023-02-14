@@ -16,3 +16,6 @@ serde_json = "1.0"
 serde = { version = "1", default-features = false }
 tempfile = "3.3"
 tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-error = "0.1"
+tracing-subscriber = "0.2"
