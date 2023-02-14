@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
+use covert_types::methods::psql::CreateRoleCredsParams;
 pub use covert_types::methods::psql::{
     CreateRoleCredsResponse, CreateRoleParams, CreateRoleResponse, ReadConnectionResponse,
     SetConnectionParams, SetConnectionResponse,
@@ -34,9 +35,10 @@ impl Client {
         &self,
         mount: &str,
         name: &str,
+        ttl: Option<Duration>,
     ) -> Result<CreateRoleCredsResponse, String> {
         let path = get_mount_path(mount, &format!("creds/{name}"));
-        self.client.get(path).await
+        self.client.put(path, &CreateRoleCredsParams { ttl }).await
     }
 
     pub async fn create_role(

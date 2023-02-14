@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
+use covert_types::methods::system::RenewLeaseParams;
 pub use covert_types::methods::system::{
     ListLeasesResponse, LookupLeaseResponse, RenewLeaseResponse, RevokedLeaseResponse,
     RevokedLeasesResponse,
@@ -16,9 +17,16 @@ impl Client {
         Self { client }
     }
 
-    pub async fn renew(&self, lease_id: &str) -> Result<RenewLeaseResponse, String> {
+    pub async fn renew(
+        &self,
+        lease_id: &str,
+        ttl: Option<Duration>,
+    ) -> Result<RenewLeaseResponse, String> {
         self.client
-            .put(format!("/sys/leases/renew/{lease_id}"), &())
+            .put(
+                format!("/sys/leases/renew/{lease_id}"),
+                &RenewLeaseParams { ttl },
+            )
             .await
     }
 

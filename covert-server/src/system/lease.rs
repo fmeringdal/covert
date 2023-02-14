@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use covert_framework::extract::{Extension, Path};
+use covert_framework::extract::{Extension, Json, Path};
 use covert_types::{
     methods::system::{
-        LeaseEntry as LeaseEntryDTO, ListLeasesResponse, LookupLeaseResponse, RenewLeaseResponse,
-        RevokedLeaseResponse, RevokedLeasesResponse,
+        LeaseEntry as LeaseEntryDTO, ListLeasesResponse, LookupLeaseResponse, RenewLeaseParams,
+        RenewLeaseResponse, RevokedLeaseResponse, RevokedLeasesResponse,
     },
     response::Response,
 };
@@ -80,9 +80,12 @@ pub async fn handle_lease_lookup(
 
 pub async fn handle_lease_renew(
     Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
+    Json(body): Json<RenewLeaseParams>,
     Path(lease_id): Path<String>,
 ) -> Result<Response, Error> {
-    let lease = expiration_manager.renew_lease_entry(&lease_id).await?;
+    let lease = expiration_manager
+        .renew_lease_entry(&lease_id, body.ttl)
+        .await?;
     let resp = RenewLeaseResponse {
         lease: LeaseEntryDTO::from(&lease),
     };

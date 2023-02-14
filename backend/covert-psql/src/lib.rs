@@ -29,10 +29,11 @@ use covert_types::{
     backend::{BackendCategory, BackendType},
     psql::ConnectionConfig,
 };
+use tracing::debug;
 
 use self::{
     path_config_connection::{path_connection_read, path_connection_write},
-    path_role_create::path_role_create_read,
+    path_role_create::generate_role_credentials,
     path_roles::path_role_create,
     secret_creds::secret_creds_revoke,
 };
@@ -52,12 +53,18 @@ pub struct Context {
 /// # Errors
 ///
 /// Returns an error if it fails to read the migration scripts.
-pub fn new_psql_backend(storage: BackendStoragePool) -> Result<Backend, MigrationError> {
+#[tracing::instrument(skip_all)]
+pub async fn new_psql_backend(storage: BackendStoragePool) -> Result<Backend, MigrationError> {
     let ctx = Arc::new(Context {
         db: RwLock::default(),
         connection_repo: ConnectionStore::new(storage.clone()),
         role_repo: RoleStore::new(storage),
     });
+
+    // Try to recover pool from the connection config if it is configured.
+    if ctx.set_pool().await.is_ok() {
+        debug!("Configured pool from previosuly stored connection configuration");
+    }
 
     let router = Router::new()
         .route(
@@ -66,7 +73,7 @@ pub fn new_psql_backend(storage: BackendStoragePool) -> Result<Backend, Migratio
                 .update(path_connection_write)
                 .create(path_connection_write),
         )
-        .route("/creds/:name", read(path_role_create_read))
+        .route("/creds/:name", update(generate_role_credentials))
         .route(
             "/roles/:name",
             update(path_role_create).create(path_role_create),
@@ -112,10 +119,13 @@ impl Context {
             None => None,
         }) {
             Ok(res) => Ok(res),
-            Err(_) => match self.connection_repo.get().await? {
-                Some(_) => self.handle_missing_pool_for_configured_connection().await,
-                None => Err(ErrorType::MissingConnection.into()),
-            },
+            Err(lock) => {
+                drop(lock);
+                match self.connection_repo.get().await? {
+                    Some(_) => self.handle_missing_pool_for_configured_connection().await,
+                    None => Err(ErrorType::MissingConnection.into()),
+                }
+            }
         }
     }
 

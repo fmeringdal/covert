@@ -218,7 +218,7 @@ impl Core {
         let backend_storage = self.storeage_pool_for_backend(&uuid, variant);
 
         let prefix = backend_storage.prefix().to_string();
-        let backend = Arc::new(self.new_backend(variant, backend_storage)?);
+        let backend = Arc::new(self.new_backend(variant, backend_storage).await?);
 
         let re = RouteEntry::new(uuid, path, Arc::clone(&backend), config)?;
         self.router.mount(re).await?;
@@ -290,14 +290,14 @@ impl Core {
         Ok(me)
     }
 
-    fn new_backend(
+    async fn new_backend(
         &self,
         variant: BackendType,
         storage: BackendStoragePool,
     ) -> Result<Backend, MigrationError> {
         match variant {
             BackendType::Kv => new_versioned_kv_backend(storage),
-            BackendType::Postgres => new_psql_backend(storage),
+            BackendType::Postgres => new_psql_backend(storage).await,
             BackendType::System => Ok(new_system_backend(
                 self.token_store.clone(),
                 self.policy_store.clone(),

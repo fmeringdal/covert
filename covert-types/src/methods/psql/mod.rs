@@ -28,6 +28,12 @@ pub struct ReadConnectionResponse {
     pub connection: Option<ConnectionConfig>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateRoleCredsParams {
+    #[serde(with = "humantime_serde")]
+    pub ttl: Option<Duration>,
+}
+
 pub type CreateRoleCredsResponse = SecretLeaseResponse<RoleCredentials>;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -40,12 +46,6 @@ pub struct CreateRoleParams {
 pub struct CreateRoleResponse {
     pub sql: String,
     pub revocation_sql: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct RenewLeaseParams {
-    #[serde(with = "humantime_serde")]
-    pub ttl: Option<Duration>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

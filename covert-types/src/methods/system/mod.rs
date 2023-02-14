@@ -1,6 +1,8 @@
 mod entity;
 mod policy;
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -137,6 +139,12 @@ pub struct LookupLeaseResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListLeasesResponse {
     pub leases: Vec<LeaseEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RenewLeaseParams {
+    #[serde(with = "humantime_serde")]
+    pub ttl: Option<Duration>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

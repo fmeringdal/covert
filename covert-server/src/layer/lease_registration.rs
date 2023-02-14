@@ -7,6 +7,7 @@ use covert_types::{
     methods::{AuthResponse, SecretLeaseResponse},
     request::Request,
     response::Response,
+    ttl::calculate_ttl,
 };
 use futures::future::BoxFuture;
 use tower::{Layer, Service};
@@ -73,10 +74,10 @@ where
 
             match resp.response {
                 Response::Lease(lease) => {
-                    let mut ttl = lease.ttl.unwrap_or(backend_config.default_lease_ttl);
-                    if ttl > backend_config.max_lease_ttl {
-                        ttl = backend_config.max_lease_ttl;
-                    }
+                    let now = Utc::now();
+                    let issued_at = now;
+                    let ttl = calculate_ttl(now, issued_at, backend_config, lease.ttl)
+                        .map_err(|_| ApiError::internal_error())?;
 
                     let le = LeaseEntry::new(
                         backend_mount_path.clone(),
@@ -84,8 +85,8 @@ where
                         &lease.revoke.data,
                         Some(lease.renew.path),
                         &lease.renew.data,
-                        Utc::now(),
-                        chrono::Duration::from_std(ttl).map_err(|_| ApiError::internal_error())?,
+                        issued_at,
+                        ttl,
                     )?;
                     let lease_id = le.id().to_string();
                     this.expiration_manager.register(le).await?;
@@ -93,7 +94,7 @@ where
                     let data = SecretLeaseResponse {
                         data: lease.data,
                         lease_id,
-                        ttl,
+                        ttl: ttl.to_std().map_err(|_| ApiError::internal_error())?,
                     };
                     let data = serde_json::to_value(&data)
                         .map_err(|err| Error::from(ErrorType::BadResponseData(err)))?;
@@ -111,16 +112,12 @@ where
                     let entity = this.identity_store.get_entity_from_alias(&alias).await?;
                     match entity {
                         Some(entity) => {
-                            let mut ttl = auth.ttl.unwrap_or(backend_config.default_lease_ttl);
-                            if ttl > backend_config.max_lease_ttl {
-                                ttl = backend_config.max_lease_ttl;
-                            }
+                            let now = Utc::now();
+                            let issued_at = now;
+                            let ttl = calculate_ttl(now, issued_at, backend_config, auth.ttl)
+                                .map_err(|_| ApiError::internal_error())?;
 
-                            let ttl_chrono =
-                                chrono::Duration::from_std(backend_config.default_lease_ttl)
-                                    .map_err(|_| ApiError::internal_error())?;
-                            let token_entry =
-                                TokenEntry::new(entity.name().to_string(), ttl_chrono);
+                            let token_entry = TokenEntry::new(entity.name().to_string(), ttl);
                             this.token_store.create(&token_entry).await?;
                             let token = token_entry.id();
 
@@ -137,8 +134,8 @@ where
                                 &revoke_data,
                                 None,
                                 &renew_data,
-                                Utc::now(),
-                                ttl_chrono,
+                                issued_at,
+                                ttl,
                             )?;
                             let lease_id = lease.id().to_string();
                             this.expiration_manager.register(lease).await?;
@@ -146,7 +143,7 @@ where
                             let data = AuthResponse {
                                 token: token.clone(),
                                 lease_id,
-                                ttl,
+                                ttl: ttl.to_std().map_err(|_| ApiError::internal_error())?,
                             };
                             let data = serde_json::to_value(&data)
                                 .map_err(|err| Error::from(ErrorType::BadResponseData(err)))?;
