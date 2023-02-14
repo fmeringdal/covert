@@ -185,7 +185,7 @@ mod tests {
 
         // Create postgres mount
         let userpass_mount = MountEntry {
-            uuid: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             backend_type: BackendType::Postgres,
             config: Default::default(),
             path: "psql/".into(),

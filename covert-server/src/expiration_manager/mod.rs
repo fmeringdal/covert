@@ -576,7 +576,7 @@ mod tests {
 
         // Setup mount
         let me = MountEntry {
-            uuid: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             backend_type: BackendType::Postgres,
             config: MountConfig::default(),
             path: "foo/".to_string(),
@@ -669,7 +669,7 @@ mod tests {
 
         // Setup system mount
         let me = MountEntry {
-            uuid: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             backend_type: BackendType::System,
             config: MountConfig::default(),
             path: SYSTEM_MOUNT_PATH.to_string(),
@@ -751,7 +751,7 @@ mod tests {
 
         // Setup system mount
         let me = MountEntry {
-            uuid: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             backend_type: BackendType::System,
             config: MountConfig::default(),
             path: SYSTEM_MOUNT_PATH.to_string(),
@@ -835,7 +835,7 @@ mod tests {
             ..Default::default()
         };
         let me = MountEntry {
-            uuid: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             backend_type: BackendType::Postgres,
             config: mount_config,
             path: "psql/".into(),
@@ -962,7 +962,7 @@ mod tests {
 
         // Setup system mount
         let me = MountEntry {
-            uuid: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             backend_type: BackendType::Postgres,
             config: MountConfig::default(),
             path: "psql/".into(),
@@ -1046,7 +1046,7 @@ mod tests {
 
         // Setup system mount
         let me = MountEntry {
-            uuid: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             backend_type: BackendType::Postgres,
             config: MountConfig::default(),
             path: "psql/".into(),
@@ -1146,7 +1146,7 @@ mod tests {
 
         // Setup system mount
         let me = MountEntry {
-            uuid: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             backend_type: BackendType::Postgres,
             config: MountConfig::default(),
             path: "psql/".into(),

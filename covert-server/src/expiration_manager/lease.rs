@@ -32,7 +32,7 @@ impl LeaseEntry {
         let issued_at = now;
         let last_renewal_time = now;
 
-        let lease_id = format!("{}", Uuid::new_v4());
+        let lease_id = Uuid::new_v4().to_string();
         let revoke_data = serde_json::to_string(revoke_data)
             .map_err(|_| ErrorType::BadData("Unable to serialize revoke data".into()))?;
         let renew_data = serde_json::to_string(renew_data)

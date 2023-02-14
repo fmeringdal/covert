@@ -68,7 +68,7 @@ impl Router {
             let ctx = ResponseContext {
                 backend_config: re.config_cloned(),
                 backend_mount_path: mount,
-                backend_id: re.uuid,
+                backend_id: re.id,
             };
             ResponseWithCtx { response, ctx }
         })
@@ -150,7 +150,7 @@ pub struct TrieMount<T> {
 
 #[derive(Debug)]
 pub struct RouteEntry {
-    uuid: Uuid,
+    id: Uuid,
     path: String,
     backend: Arc<Backend>,
     config: Arc<parking_lot::RwLock<MountConfig>>,
@@ -158,7 +158,7 @@ pub struct RouteEntry {
 
 impl RouteEntry {
     pub fn new(
-        uuid: Uuid,
+        id: Uuid,
         path: String,
         backend: Arc<Backend>,
         config: MountConfig,
@@ -186,7 +186,7 @@ impl RouteEntry {
         }
 
         Ok(Self {
-            uuid,
+            id,
             path,
             backend,
             config: Arc::new(parking_lot::RwLock::new(config)),
@@ -201,8 +201,8 @@ impl RouteEntry {
         self.config.read().clone()
     }
 
-    pub fn uuid(&self) -> Uuid {
-        self.uuid
+    pub fn id(&self) -> Uuid {
+        self.id
     }
 }
 

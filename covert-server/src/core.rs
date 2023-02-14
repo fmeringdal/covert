@@ -119,7 +119,7 @@ impl Core {
         }
 
         for mount in mounts {
-            self.mount_route_entry(mount.path, mount.uuid, mount.backend_type, mount.config)
+            self.mount_route_entry(mount.path, mount.id, mount.backend_type, mount.config)
                 .await?;
         }
 
@@ -190,7 +190,7 @@ impl Core {
 
         if !is_internal_backend {
             let entry = MountEntry {
-                uuid,
+                id: uuid,
                 path,
                 config,
                 backend_type: variant,
@@ -211,16 +211,16 @@ impl Core {
     async fn mount_route_entry(
         &self,
         path: String,
-        uuid: Uuid,
+        id: Uuid,
         variant: BackendType,
         config: MountConfig,
     ) -> Result<(Arc<Backend>, String), Error> {
-        let backend_storage = self.storage_pool_for_backend(variant, &uuid);
+        let backend_storage = self.storage_pool_for_backend(variant, &id);
 
         let prefix = backend_storage.prefix().to_string();
         let backend = Arc::new(self.new_backend(variant, backend_storage).await?);
 
-        let re = RouteEntry::new(uuid, path, Arc::clone(&backend), config)?;
+        let re = RouteEntry::new(id, path, Arc::clone(&backend), config)?;
         self.router.mount(re).await?;
 
         Ok((backend, prefix))
@@ -238,7 +238,7 @@ impl Core {
             .await?
             .ok_or_else(|| ErrorType::MountNotFound { path: path.into() })?;
         me.config = config;
-        self.mounts_store.set_config(me.uuid, &me.config).await?;
+        self.mounts_store.set_config(me.id, &me.config).await?;
         self.router.update_mount(path, me.config.clone()).await?;
 
         Ok(me)
@@ -280,7 +280,7 @@ impl Core {
         self.mounts_store.remove_by_path(path).await?;
 
         // Delete all storage for the mount
-        let storage = self.storage_pool_for_backend(me.backend_type, &me.uuid);
+        let storage = self.storage_pool_for_backend(me.backend_type, &me.id);
         let storage_prefix = storage.prefix();
         let tables = crate::helpers::sqlite::get_resources_by_prefix(
             self.encrypted_pool.as_ref(),

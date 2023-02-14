@@ -24,7 +24,7 @@ impl Default for MountConfig {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct MountEntry {
-    pub uuid: Uuid,
+    pub id: Uuid,
     pub path: String,
     pub config: MountConfig,
     pub backend_type: BackendType,

@@ -104,7 +104,7 @@ pub struct DisbaleMountResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MountsListItemResponse {
-    pub uuid: Uuid,
+    pub id: Uuid,
     pub path: String,
     pub category: BackendCategory,
     #[serde(rename = "type")]

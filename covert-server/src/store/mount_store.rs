@@ -23,7 +23,7 @@ impl TryFrom<MountEntryRaw> for MountEntry {
     type Error = Error;
 
     fn try_from(value: MountEntryRaw) -> Result<MountEntry, Error> {
-        let uuid = Uuid::from_str(&value.id).map_err(|_| {
+        let id = Uuid::from_str(&value.id).map_err(|_| {
             ErrorType::BadData(format!("`{}` is not a valid uuid mount id", value.id))
         })?;
         let backend_type = BackendType::from_str(&value.variant).map_err(|_| {
@@ -33,7 +33,7 @@ impl TryFrom<MountEntryRaw> for MountEntry {
         let max_lease_ttl = u64::try_from(value.max_lease_ttl).unwrap_or(u64::MAX);
 
         Ok(MountEntry {
-            uuid,
+            id,
             path: value.path,
             config: MountConfig {
                 default_lease_ttl: Duration::from_millis(default_lease_ttl),
@@ -63,7 +63,7 @@ impl MountStore {
             "INSERT INTO MOUNTS (id, path, variant, max_lease_ttl, default_lease_ttl)
             VALUES (?, ?, ?, ?, ?)",
         )
-        .bind(mount.uuid.to_string())
+        .bind(mount.id.to_string())
         .bind(&mount.path)
         .bind(mount.backend_type.to_string())
         .bind(max_lease_ttl)
@@ -162,7 +162,7 @@ pub mod tests {
         let store = MountStore::new(Arc::new(pool));
 
         let mut me = MountEntry {
-            uuid: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             backend_type: BackendType::Kv,
             config: MountConfig {
                 default_lease_ttl: Duration::from_secs(30),
@@ -179,7 +179,7 @@ pub mod tests {
         };
         me.config = new_config.clone();
 
-        assert!(store.set_config(me.uuid, &new_config).await.is_ok());
+        assert!(store.set_config(me.id, &new_config).await.is_ok());
         assert_eq!(store.list().await.unwrap(), vec![me.clone()]);
 
         assert_eq!(store.get_by_path(&me.path).await.unwrap(), Some(me.clone()));

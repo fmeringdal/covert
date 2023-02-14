@@ -44,7 +44,7 @@ pub async fn handle_update_mount(
     let resp = UpdateMountResponse {
         variant: me.backend_type,
         config: me.config,
-        id: me.uuid,
+        id: me.id,
         path,
     };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
@@ -74,7 +74,7 @@ pub async fn handle_mounts_list(
         }
 
         let mount = MountsListItemResponse {
-            uuid: re.uuid(),
+            id: re.id(),
             path,
             category: re.backend().category(),
             variant: re.backend().variant(),
@@ -97,7 +97,7 @@ pub async fn handle_mount_disable(
     let mount = core.remove_mount(&path).await?;
     let resp = DisbaleMountResponse {
         mount: MountsListItemResponse {
-            uuid: mount.uuid,
+            id: mount.id,
             path,
             category: mount.backend_type.into(),
             variant: mount.backend_type,
