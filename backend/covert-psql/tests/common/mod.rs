@@ -1,16 +1,19 @@
 use covert_sdk::{
+    mounts::{BackendType, CreateMountParams, MountConfig},
     operator::{InitializeParams, InitializeResponse, UnsealParams},
     Client,
 };
 use tokio::sync::oneshot;
 
-pub async fn setup() -> Client {
+pub const MOUNT_PATH: &str = "database/";
+
+pub async fn setup(storage: &str) -> Client {
     let (port_tx, mut port_rx) = oneshot::channel();
 
     let config = covert_system::Config {
         port: 0,
         port_tx: Some(port_tx),
-        storage_path: ":memory:".into(),
+        storage_path: storage.into(),
     };
 
     tokio::spawn(async move {
@@ -27,7 +30,7 @@ pub async fn setup() -> Client {
 }
 
 pub async fn setup_unseal() -> Client {
-    let sdk = setup().await;
+    let sdk = setup(":memory:").await;
     let shares = match sdk
         .operator
         .initialize(&InitializeParams {
@@ -41,5 +44,17 @@ pub async fn setup_unseal() -> Client {
         _ => panic!("should get new shares"),
     };
     sdk.operator.unseal(&UnsealParams { shares }).await.unwrap();
+
+    sdk.mount
+        .create(
+            MOUNT_PATH,
+            &CreateMountParams {
+                variant: BackendType::Postgres,
+                config: MountConfig::default(),
+            },
+        )
+        .await
+        .unwrap();
+
     sdk
 }

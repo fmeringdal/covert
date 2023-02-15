@@ -1,8 +1,11 @@
 use covert_sdk::{
+    mounts::{BackendType, CreateMountParams, MountConfig},
     operator::{InitializeParams, InitializeResponse, UnsealParams},
     Client,
 };
 use tokio::sync::oneshot;
+
+pub const MOUNT_PATH: &str = "kv/";
 
 pub async fn setup() -> Client {
     let (port_tx, mut port_rx) = oneshot::channel();
@@ -41,5 +44,17 @@ pub async fn setup_unseal() -> Client {
         _ => panic!("should get new shares"),
     };
     sdk.operator.unseal(&UnsealParams { shares }).await.unwrap();
+
+    sdk.mount
+        .create(
+            MOUNT_PATH,
+            &CreateMountParams {
+                variant: BackendType::Kv,
+                config: MountConfig::default(),
+            },
+        )
+        .await
+        .unwrap();
+
     sdk
 }

@@ -45,11 +45,11 @@ impl Repo {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::tests::setup;
+    use crate::store::secrets::tests::setup;
 
     #[sqlx::test]
     fn load_and_set_config() {
-        let ctx = setup().await.ctx;
+        let ctx = setup().await;
         let repo = &ctx.repos.config;
 
         let mut config = repo.load().await.unwrap();

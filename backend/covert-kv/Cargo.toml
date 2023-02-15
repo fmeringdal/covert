@@ -28,4 +28,5 @@ tracing-error = "0.1"
 uuid = { version = "0.8", features = ["serde", "v4"] }
 
 [dev-dependencies]
-http = "0.2"
+covert-system = { path = "../../covert-server", version = "0.1.1" }
+covert-sdk = { path = "../../covert-sdk", version = "0.1.1" }

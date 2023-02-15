@@ -22,7 +22,7 @@ use covert_storage::{
 use covert_types::{
     backend::{BackendCategory, BackendType},
     methods::userpass::{
-        CreateUserParams, CreateUserResponse, ListUsersResponse, RemoveUserResponse,
+        CreateUserParams, CreateUserResponse, ListUsersResponse, LoginParams, RemoveUserResponse,
         UpdateUserPasswordParams, UpdateUserPasswordResponse, UserListItem,
     },
     response::Response,
@@ -33,7 +33,8 @@ use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use store::user::UsersRepo;
 
-const DEFAULT_COST: u32 = 10;
+// TODO: maybe increase this
+const DEFAULT_COST: u32 = 8;
 
 pub struct Context {
     users_repo: UsersRepo,
@@ -80,12 +81,6 @@ pub fn new_userpass_backend(pool: BackendStoragePool) -> Result<Backend, Migrati
         variant: BackendType::Userpass,
         migrations,
     })
-}
-
-#[derive(Debug, Deserialize)]
-struct LoginParams {
-    username: String,
-    password: String,
 }
 
 #[tracing::instrument(skip_all)]
