@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
-pub use covert_types::methods::userpass::{
-    CreateUserParams, CreateUserResponse, ListUsersResponse, RemoveUserResponse,
-    UpdateUserPasswordParams, UpdateUserPasswordResponse,
+pub use covert_types::methods::{
+    userpass::{
+        CreateUserParams, CreateUserResponse, ListUsersResponse, LoginParams, RemoveUserResponse,
+        UpdateUserPasswordParams, UpdateUserPasswordResponse,
+    },
+    AuthResponse,
 };
 
 use crate::{base::BaseClient, utils::get_mount_path};
@@ -28,6 +31,11 @@ impl Client {
     pub async fn list(&self, mount: &str) -> Result<ListUsersResponse, String> {
         let path = get_mount_path(mount, "users");
         self.client.get(path).await
+    }
+
+    pub async fn login(&self, mount: &str, params: &LoginParams) -> Result<AuthResponse, String> {
+        let path = get_mount_path(mount, "login");
+        self.client.put(path, params).await
     }
 
     pub async fn remove(&self, mount: &str, username: &str) -> Result<RemoveUserResponse, String> {

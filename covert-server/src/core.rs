@@ -169,6 +169,7 @@ impl Core {
     }
 
     /// Mount a new backend
+    #[tracing::instrument(skip(self))]
     pub async fn mount(
         &self,
         path: String,
@@ -208,6 +209,7 @@ impl Core {
         Ok(uuid)
     }
 
+    #[tracing::instrument(skip(self))]
     async fn mount_route_entry(
         &self,
         path: String,
@@ -227,6 +229,7 @@ impl Core {
     }
 
     fn storage_pool_for_backend(&self, variant: BackendType, id: &Uuid) -> BackendStoragePool {
+        let id = id.to_simple();
         let prefix = format!("{variant}_{id}_");
         BackendStoragePool::new(&prefix, Arc::clone(&self.encrypted_pool))
     }

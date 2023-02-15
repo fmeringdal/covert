@@ -5,6 +5,9 @@ license = "MIT OR Apache-2.0"
 version = "0.1.1"
 edition = "2021"
 
+[features]
+psql-integration-test = []
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -17,8 +20,14 @@ rust-embed = "6.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", default-features = false }
 sqlx = { version = "0.6", features = ["runtime-tokio-native-tls", "postgres"] }
+tempfile = "3.3"
 thiserror = "1.0"
 tokio = { version = "1.23", features = ["sync"] }
 tracing = "0.1"
 tracing-error = "0.1"
 uuid = { version = "0.8", features = ["serde", "v4"] }
+
+[dev-dependencies]
+covert-system = { path = "../../covert-server", version = "0.1.1" }
+covert-sdk = { path = "../../covert-sdk", version = "0.1.1" }
+rand = "0.8"

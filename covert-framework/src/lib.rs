@@ -63,6 +63,7 @@ impl Backend {
     /// # Errors
     ///
     /// Returns error if migration fails.
+    #[tracing::instrument(skip(self, pool))]
     pub async fn migrate(
         &self,
         pool: Arc<EncryptedPool>,

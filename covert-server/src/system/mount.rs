@@ -16,6 +16,7 @@ use crate::{
     Core,
 };
 
+#[tracing::instrument(skip(core))]
 pub async fn handle_mount(
     Extension(core): Extension<Arc<Core>>,
     Path(path): Path<String>,

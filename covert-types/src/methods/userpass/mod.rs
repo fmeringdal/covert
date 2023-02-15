@@ -16,7 +16,7 @@ pub struct ListUsersResponse {
     pub users: Vec<UserListItem>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UserListItem {
     pub username: String,
 }
@@ -35,4 +35,10 @@ pub struct UpdateUserPasswordResponse {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RemoveUserResponse {
     pub username: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct LoginParams {
+    pub username: String,
+    pub password: String,
 }

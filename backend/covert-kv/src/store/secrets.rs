@@ -119,6 +119,7 @@ impl Repo {
                     "UPDATE {SECRETS_TABLE} 
                 SET
                     destroyed = TRUE,
+                    deleted = TRUE,
                     value = NULL
                 WHERE
                     key = $1 AND
@@ -177,16 +178,27 @@ impl Repo {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
+pub mod tests {
+    use std::{collections::HashMap, sync::Arc};
 
     use chrono::Utc;
+    use covert_storage::{migrator::migrate_backend, BackendStoragePool, EncryptedPool};
 
-    use crate::{config::tests::setup, domain::secret::Secret};
+    use crate::{context::Context, domain::secret::Secret, Migrations};
+
+    pub async fn setup() -> Context {
+        let pool = Arc::new(EncryptedPool::new_tmp());
+
+        let storage = BackendStoragePool::new("foo_", pool);
+
+        migrate_backend::<Migrations>(&storage).await.unwrap();
+
+        Context::new(storage)
+    }
 
     #[sqlx::test]
     fn insert() {
-        let ctx = setup().await.ctx;
+        let ctx = setup().await;
         let repo = &ctx.repos.secrets;
 
         let secret = Secret {
@@ -231,7 +243,7 @@ mod tests {
 
     #[sqlx::test]
     fn prune_old_versions() {
-        let ctx = setup().await.ctx;
+        let ctx = setup().await;
         let repo = &ctx.repos.secrets;
 
         let max_versions = 10;
@@ -283,7 +295,7 @@ mod tests {
 
     #[sqlx::test]
     fn hard_delete() {
-        let ctx = setup().await.ctx;
+        let ctx = setup().await;
         let repo = &ctx.repos.secrets;
 
         let key = "foo";
@@ -314,7 +326,7 @@ mod tests {
 
     #[sqlx::test]
     fn soft_delete_and_recover() {
-        let ctx = setup().await.ctx;
+        let ctx = setup().await;
         let repo = &ctx.repos.secrets;
 
         let key = "foo";
