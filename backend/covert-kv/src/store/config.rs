@@ -45,7 +45,7 @@ impl Repo {
 
 #[cfg(test)]
 mod tests {
-    use crate::store::secrets::tests::setup;
+    use crate::{domain::config::Configuration, store::secrets::tests::setup};
 
     #[sqlx::test]
     fn load_and_set_config() {
@@ -53,7 +53,7 @@ mod tests {
         let repo = &ctx.repos.config;
 
         let mut config = repo.load().await.unwrap();
-        assert_eq!(config, Default::default());
+        assert_eq!(config, Configuration::default());
 
         config.max_versions += 1;
         repo.set(&config).await.unwrap();

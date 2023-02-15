@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use covert_framework::extract::{Extension, Json};
 use covert_types::{
     methods::system::{
@@ -10,12 +8,12 @@ use covert_types::{
 
 use crate::{
     error::{Error, ErrorType},
-    Core,
+    repos::Repos,
 };
 
 #[allow(clippy::unused_async)]
 pub async fn handle_initialize(
-    Extension(core): Extension<Arc<Core>>,
+    Extension(repos): Extension<Repos>,
     Json(body): Json<InitializeParams>,
 ) -> Result<Response, Error> {
     // Sanity check params before making real master key
@@ -23,7 +21,7 @@ pub async fn handle_initialize(
         return Err(ErrorType::InvalidInitializeParams.into());
     }
 
-    if let Some(master_key) = core.initialize()? {
+    if let Some(master_key) = repos.pool.initialize()? {
         let sharks = sharks::Sharks(body.threshold);
         let key_shares = sharks
             .dealer(master_key.as_bytes())

@@ -14,11 +14,11 @@ use tower::{Layer, Service};
 
 use crate::{
     error::{Error, ErrorType},
-    response::ResponseWithCtx,
-    store::{
-        identity_store::IdentityStore,
-        token_store::{TokenEntry, TokenStore},
+    repos::{
+        entity::EntityRepo,
+        token::{TokenEntry, TokenRepo},
     },
+    response::ResponseWithCtx,
     system::RevokeTokenParams,
     ExpirationManager, LeaseEntry,
 };
@@ -27,22 +27,22 @@ use crate::{
 pub struct LeaseRegistrationService<S> {
     inner: S,
     expiration_manager: Arc<ExpirationManager>,
-    token_store: Arc<TokenStore>,
-    identity_store: Arc<IdentityStore>,
+    token_repo: TokenRepo,
+    entity_repo: EntityRepo,
 }
 
 impl<S> LeaseRegistrationService<S> {
     pub fn new(
         inner: S,
         expiration_manager: Arc<ExpirationManager>,
-        token_store: Arc<TokenStore>,
-        identity_store: Arc<IdentityStore>,
+        token_repo: TokenRepo,
+        entity_repo: EntityRepo,
     ) -> Self {
         Self {
             inner,
             expiration_manager,
-            token_store,
-            identity_store,
+            token_repo,
+            entity_repo,
         }
     }
 }
@@ -109,7 +109,7 @@ where
                         name: auth.alias.clone(),
                         mount_path: backend_mount_path.clone(),
                     };
-                    let entity = this.identity_store.get_entity_from_alias(&alias).await?;
+                    let entity = this.entity_repo.get_entity_from_alias(&alias).await?;
                     match entity {
                         Some(entity) => {
                             let now = Utc::now();
@@ -118,7 +118,7 @@ where
                                 .map_err(|_| ApiError::internal_error())?;
 
                             let token_entry = TokenEntry::new(entity.name().to_string(), ttl);
-                            this.token_store.create(&token_entry).await?;
+                            this.token_repo.create(&token_entry).await?;
                             let token = token_entry.id();
 
                             let revoke_data = RevokeTokenParams {
@@ -168,20 +168,20 @@ where
 
 pub struct LeaseRegistrationLayer {
     expiration_manager: Arc<ExpirationManager>,
-    token_store: Arc<TokenStore>,
-    identity_store: Arc<IdentityStore>,
+    token_repo: TokenRepo,
+    entity_repo: EntityRepo,
 }
 
 impl LeaseRegistrationLayer {
     pub fn new(
         expiration_manager: Arc<ExpirationManager>,
-        token_store: Arc<TokenStore>,
-        identity_store: Arc<IdentityStore>,
+        token_repo: TokenRepo,
+        entity_repo: EntityRepo,
     ) -> Self {
         Self {
             expiration_manager,
-            token_store,
-            identity_store,
+            token_repo,
+            entity_repo,
         }
     }
 }
@@ -193,8 +193,8 @@ impl<S> Layer<S> for LeaseRegistrationLayer {
         LeaseRegistrationService::new(
             inner,
             Arc::clone(&self.expiration_manager),
-            Arc::clone(&self.token_store),
-            Arc::clone(&self.identity_store),
+            self.token_repo.clone(),
+            self.entity_repo.clone(),
         )
     }
 }

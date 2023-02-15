@@ -11,7 +11,7 @@ use covert_types::error::ApiError;
 use covert_types::methods::psql::RenewLeaseResponse;
 use covert_types::methods::RenewLeaseParams;
 use covert_types::request::{Operation, Request};
-use covert_types::state::VaultState;
+use covert_types::state::StorageState;
 use covert_types::ttl::calculate_ttl;
 use futures::stream::FuturesOrdered;
 use futures::{Future, StreamExt};
@@ -23,8 +23,8 @@ use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use crate::error::{Error, ErrorType};
-use crate::store::lease_store::LeaseStore;
-use crate::store::mount_store::MountStore;
+use crate::repos::lease::LeaseRepo;
+use crate::repos::mount::MountRepo;
 
 use self::clock::Clock;
 pub use self::lease::LeaseEntry;
@@ -38,9 +38,9 @@ pub struct ExpirationManager {
     /// Router to send revoke / renew requests to the backends
     router: Arc<Router>,
     /// Lease storage
-    lease_store: Arc<LeaseStore>,
+    lease_repo: LeaseRepo,
     /// Mount storage
-    mount_store: Arc<MountStore>,
+    mount_repo: MountRepo,
     /// Shutdown listener
     shutdown_rx: Arc<RwLock<tokio::sync::mpsc::Receiver<()>>>,
     /// Shutdown transmitter
@@ -61,8 +61,8 @@ impl ExpirationManager {
     /// Create a new expiration manager.
     pub fn new(
         router: Arc<Router>,
-        lease_store: Arc<LeaseStore>,
-        mount_store: Arc<MountStore>,
+        lease_repo: LeaseRepo,
+        mount_repo: MountRepo,
         clock: impl Clock,
     ) -> Self {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
@@ -70,8 +70,8 @@ impl ExpirationManager {
         ExpirationManager {
             background_task: Notify::new(),
             router,
-            lease_store,
-            mount_store,
+            lease_repo,
+            mount_repo,
             shutdown_rx: Arc::new(RwLock::new(rx)),
             shutdown_tx: tx,
             revocation_retry_timeout: Duration::seconds(5),
@@ -87,7 +87,7 @@ impl ExpirationManager {
     /// This is the only way to register new leases, leases should *not* be inserted
     /// directly to the [`LeaseStore`] without going throught the expiration manager.
     pub async fn register(&self, le: LeaseEntry) -> Result<(), Error> {
-        self.lease_store.create(&le).await?;
+        self.lease_repo.create(&le).await?;
         // Let the revocation worker know about the lease.
         self.background_task.notify_one();
         Ok(())
@@ -98,7 +98,7 @@ impl ExpirationManager {
         &self,
         prefix: &str,
     ) -> Result<Vec<LeaseEntry>, Error> {
-        let leases = self.lease_store.list_by_mount_prefix(prefix).await?;
+        let leases = self.lease_repo.list_by_mount_prefix(prefix).await?;
 
         let mut revoke_futures = FuturesOrdered::new();
 
@@ -125,12 +125,12 @@ impl ExpirationManager {
 
     /// List all leases issued by mounts under a given path prefix.
     pub async fn list_by_mount_prefix(&self, prefix: &str) -> Result<Vec<LeaseEntry>, Error> {
-        self.lease_store.list_by_mount_prefix(prefix).await
+        self.lease_repo.list_by_mount_prefix(prefix).await
     }
 
     /// Lookup a lease by its id.
     pub async fn lookup(&self, lease_id: &str) -> Result<Option<LeaseEntry>, Error> {
-        self.lease_store.lookup(lease_id).await
+        self.lease_repo.lookup(lease_id).await
     }
 
     /// Revoke a lease by its id.
@@ -160,7 +160,7 @@ impl ExpirationManager {
         // Perform revocation
         let mut extensions = http::Extensions::new();
         extensions.insert(AuthPolicy::Root);
-        extensions.insert(VaultState::Unsealed);
+        extensions.insert(StorageState::Unsealed);
 
         let revoke_path = le.revoke_path.as_ref().map_or_else(
             || "sys/token/revoke".into(),
@@ -196,12 +196,12 @@ impl ExpirationManager {
         ttl: Option<std::time::Duration>,
     ) -> Result<LeaseEntry, Error> {
         let mut le = self
-            .lease_store
+            .lease_repo
             .lookup(lease_id)
             .await?
             .ok_or_else(|| ErrorType::NotFound(format!("Lease `{lease_id}` not found")))?;
         let mount_config = self
-            .mount_store
+            .mount_repo
             .get_by_path(&le.issued_mount_path)
             .await?
             .ok_or_else(|| ErrorType::MountNotFound {
@@ -219,7 +219,7 @@ impl ExpirationManager {
         // Perform renewal
         let mut extensions = http::Extensions::new();
         extensions.insert(AuthPolicy::Root);
-        extensions.insert(VaultState::Unsealed);
+        extensions.insert(StorageState::Unsealed);
 
         let renew_path = le
             .renew_path
@@ -277,7 +277,7 @@ impl ExpirationManager {
 
                 le.expires_at = now + ttl;
                 le.last_renewal_time = now;
-                self.lease_store
+                self.lease_repo
                     .renew(lease_id, le.expires_at, le.last_renewal_time)
                     .await?;
 
@@ -303,7 +303,7 @@ impl ExpirationManager {
             let now = self.clock.now();
             #[allow(clippy::cast_possible_truncation)]
             let leases = match self
-                .lease_store
+                .lease_repo
                 .pull(self.revocation_worker_concurrency as u32, now)
                 .await
             {
@@ -319,7 +319,7 @@ impl ExpirationManager {
             if number_of_leases == 0 {
                 // TODO: this might need more care to ensure no leases are lost
                 let next_lease_fut = self
-                    .lease_store
+                    .lease_repo
                     .peek()
                     .await?
                     .map(|le| le.expires_at - self.clock.now())
@@ -366,7 +366,7 @@ impl ExpirationManager {
         let res = self.send_lease_revoke_request(le).await;
         match res {
             Ok(_) => {
-                self.lease_store
+                self.lease_repo
                     .delete(&le.id)
                     .await
                     .map_err(|error| {
@@ -383,13 +383,13 @@ impl ExpirationManager {
                 // TODO: why is +1 needed here
                 if le.failed_revocation_attempts + 1 >= self.revocation_max_retries {
                     // Delete from store
-                    if let Err(error) = self.lease_store.delete(&le.id).await {
+                    if let Err(error) = self.lease_repo.delete(&le.id).await {
                         error!(?error, "failed to delete lease from store that has passed max number of revocation retries");
                     };
                 } else {
                     // Increase failed count
                     if let Err(error) = self
-                        .lease_store
+                        .lease_repo
                         .increment_failed_revocation_attempts(
                             &le.id,
                             // TODO: exp backoff and configure revocation_retry_timeout
@@ -425,8 +425,8 @@ mod tests {
     use tokio::time::sleep;
 
     use crate::{
-        core::SYSTEM_MOUNT_PATH, expiration_manager::clock::test::TestClock, router::RouteEntry,
-        store::mount_store::tests::pool,
+        expiration_manager::clock::test::TestClock, repos::mount::tests::pool, router::RouteEntry,
+        system::SYSTEM_MOUNT_PATH,
     };
 
     use super::*;
@@ -522,14 +522,10 @@ mod tests {
                 return false;
             }
 
-            let received_at = if let Some(dt) = self.reveived_at {
-                dt
-            } else {
+            let Some(received_at) = self.reveived_at else {
                 return true;
             };
-            let other_received_at = if let Some(dt) = other.reveived_at {
-                dt
-            } else {
+            let Some(other_received_at) = other.reveived_at else {
                 return true;
             };
 
@@ -558,13 +554,13 @@ mod tests {
 
         let pool = Arc::new(pool().await);
 
-        let lease_store = Arc::new(LeaseStore::new(Arc::clone(&pool)));
-        let mount_store = Arc::new(MountStore::new(Arc::clone(&pool)));
+        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
+        let mount_repo = MountRepo::new(Arc::clone(&pool));
         let router = Arc::new(Router::new());
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            Arc::clone(&lease_store),
-            Arc::clone(&mount_store),
+            lease_repo.clone(),
+            mount_repo.clone(),
             clock.clone(),
         ));
 
@@ -581,7 +577,7 @@ mod tests {
             config: MountConfig::default(),
             path: "foo/".to_string(),
         };
-        mount_store.create(&me).await.unwrap();
+        mount_repo.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -618,14 +614,14 @@ mod tests {
         .unwrap();
 
         assert!(exp_m.register(le.clone()).await.is_ok());
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
-        let next_lease = lease_store.peek().await.unwrap();
+        let next_lease = lease_repo.peek().await.unwrap();
         assert_eq!(next_lease, Some(le.clone()));
 
         // Wait ttl - 1 hours and it should still be there
         advance_to(&clock, le.expires_at - Duration::hours(1)).await;
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
 
         // Go to expire time
@@ -641,7 +637,7 @@ mod tests {
             }]
         );
 
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![]);
     }
 
@@ -651,13 +647,13 @@ mod tests {
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_store = Arc::new(LeaseStore::new(Arc::clone(&pool)));
-        let mount_store = Arc::new(MountStore::new(Arc::clone(&pool)));
+        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
+        let mount_repo = MountRepo::new(Arc::clone(&pool));
         let router = Arc::new(Router::new());
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            Arc::clone(&lease_store),
-            Arc::clone(&mount_store),
+            lease_repo.clone(),
+            mount_repo.clone(),
             clock.clone(),
         ));
 
@@ -674,7 +670,7 @@ mod tests {
             config: MountConfig::default(),
             path: SYSTEM_MOUNT_PATH.to_string(),
         };
-        mount_store.create(&me).await.unwrap();
+        mount_repo.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -702,12 +698,12 @@ mod tests {
         let le = LeaseEntry::new(me.path.clone(), None, &(), None, &(), clock.now(), ttl).unwrap();
 
         assert!(exp_m.register(le.clone()).await.is_ok());
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
 
         // Wait ttl - 1 hours and it should still be there
         advance_to(&clock, le.expires_at - Duration::hours(1)).await;
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
 
         // Go to revocation time
@@ -723,7 +719,7 @@ mod tests {
             }]
         );
 
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![]);
     }
 
@@ -733,13 +729,13 @@ mod tests {
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_store = Arc::new(LeaseStore::new(Arc::clone(&pool)));
-        let mount_store = Arc::new(MountStore::new(Arc::clone(&pool)));
+        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
+        let mount_repo = MountRepo::new(Arc::clone(&pool));
         let router = Arc::new(Router::new());
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            Arc::clone(&lease_store),
-            Arc::clone(&mount_store),
+            lease_repo.clone(),
+            mount_repo.clone(),
             clock.clone(),
         ));
 
@@ -756,7 +752,7 @@ mod tests {
             config: MountConfig::default(),
             path: SYSTEM_MOUNT_PATH.to_string(),
         };
-        mount_store.create(&me).await.unwrap();
+        mount_repo.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -784,10 +780,10 @@ mod tests {
         let le = LeaseEntry::new(me.path.clone(), None, &(), None, &(), clock.now(), ttl).unwrap();
 
         assert!(exp_m.register(le.clone()).await.is_ok());
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
         assert!(exp_m.revoke_lease_entry_by_id(le.id()).await.is_ok());
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![]);
 
         advance_to(&clock, le.expires_at).await;
@@ -803,23 +799,24 @@ mod tests {
         );
 
         // Sanity test that leases is still empty
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![]);
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)]
     async fn renew() {
         let clock = TestClock::new();
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_store = Arc::new(LeaseStore::new(Arc::clone(&pool)));
-        let mount_store = Arc::new(MountStore::new(Arc::clone(&pool)));
+        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
+        let mount_repo = MountRepo::new(Arc::clone(&pool));
         let router = Arc::new(Router::new());
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            Arc::clone(&lease_store),
-            Arc::clone(&mount_store),
+            lease_repo.clone(),
+            mount_repo.clone(),
             clock.clone(),
         ));
 
@@ -840,7 +837,7 @@ mod tests {
             config: mount_config,
             path: "psql/".into(),
         };
-        mount_store.create(&me).await.unwrap();
+        mount_repo.create(&me).await.unwrap();
 
         let renew_ttl = Duration::hours(2);
 
@@ -881,7 +878,7 @@ mod tests {
         .unwrap();
 
         assert!(exp_m.register(le.clone()).await.is_ok());
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
 
         // 1 hour before it expires. Lets renew!
@@ -889,7 +886,7 @@ mod tests {
 
         // Renew
         let new_le = exp_m.renew_lease_entry(le.id(), None).await.unwrap();
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
         let new_expire_time = new_le.expires_at;
 
@@ -931,7 +928,7 @@ mod tests {
         drop(requests);
 
         // Sanity test that leases is still empty
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![]);
     }
 
@@ -941,13 +938,13 @@ mod tests {
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_store = Arc::new(LeaseStore::new(Arc::clone(&pool)));
-        let mount_store = Arc::new(MountStore::new(Arc::clone(&pool)));
+        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
+        let mount_repo = MountRepo::new(Arc::clone(&pool));
         let router = Arc::new(Router::new());
         let mut exp_m = ExpirationManager::new(
             Arc::clone(&router),
-            Arc::clone(&lease_store),
-            Arc::clone(&mount_store),
+            lease_repo.clone(),
+            mount_repo.clone(),
             clock.clone(),
         );
         exp_m.revocation_retry_timeout = Duration::milliseconds(10);
@@ -967,7 +964,7 @@ mod tests {
             config: MountConfig::default(),
             path: "psql/".into(),
         };
-        mount_store.create(&me).await.unwrap();
+        mount_repo.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -1018,7 +1015,7 @@ mod tests {
         drop(requests);
 
         // Lease should be deleted
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![]);
     }
 
@@ -1028,13 +1025,13 @@ mod tests {
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_store = Arc::new(LeaseStore::new(Arc::clone(&pool)));
-        let mount_store = Arc::new(MountStore::new(Arc::clone(&pool)));
+        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
+        let mount_repo = MountRepo::new(Arc::clone(&pool));
         let router = Arc::new(Router::new());
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            Arc::clone(&lease_store),
-            Arc::clone(&mount_store),
+            lease_repo.clone(),
+            mount_repo.clone(),
             clock.clone(),
         ));
 
@@ -1051,7 +1048,7 @@ mod tests {
             config: MountConfig::default(),
             path: "psql/".into(),
         };
-        mount_store.create(&me).await.unwrap();
+        mount_repo.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -1102,7 +1099,7 @@ mod tests {
         );
 
         // Leases should be empty
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases, vec![]);
 
         // Number of leases revoked == number of requests
@@ -1125,13 +1122,13 @@ mod tests {
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_store = Arc::new(LeaseStore::new(Arc::clone(&pool)));
-        let mount_store = Arc::new(MountStore::new(Arc::clone(&pool)));
+        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
+        let mount_repo = MountRepo::new(Arc::clone(&pool));
         let router = Arc::new(Router::new());
         let mut exp_m = ExpirationManager::new(
             Arc::clone(&router),
-            Arc::clone(&lease_store),
-            Arc::clone(&mount_store),
+            lease_repo.clone(),
+            mount_repo.clone(),
             clock.clone(),
         );
         exp_m.revocation_max_retries = 3;
@@ -1151,7 +1148,7 @@ mod tests {
             config: MountConfig::default(),
             path: "psql/".into(),
         };
-        mount_store.create(&me).await.unwrap();
+        mount_repo.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -1209,14 +1206,14 @@ mod tests {
         advance_to(&clock, slow_lease.expires_at).await;
 
         // All leases still stored
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases.len(), lease_count + 1);
 
         // Advance to time where fast leases will be revoked
         advance_to(&clock, fast_lease_revocation_time).await;
 
         // All fast lease revocations are gone now
-        let leases = lease_store.list().await.unwrap();
+        let leases = lease_repo.list().await.unwrap();
         assert_eq!(leases.len(), 1);
     }
 }

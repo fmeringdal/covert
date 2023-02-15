@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::{
     backend::{BackendCategory, BackendType},
     mount::MountConfig,
-    state::VaultState,
+    state::StorageState,
     token::Token,
 };
 pub use entity::*;
@@ -55,7 +55,7 @@ pub struct SealResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatusResponse {
-    pub state: VaultState,
+    pub state: StorageState,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

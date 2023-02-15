@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use covert_framework::extract::{Extension, Json, Path};
 use covert_types::{
     entity::Entity,
@@ -16,33 +14,32 @@ use covert_types::{
 use crate::{
     error::{Error, ErrorType},
     layer::auth_service::Permissions,
-    store::{identity_store::IdentityStore, policy_store::PolicyStore},
+    repos::Repos,
 };
 
-#[tracing::instrument(skip(identity_store))]
+#[tracing::instrument(skip(repos))]
 pub async fn handle_entity_create(
-    Extension(identity_store): Extension<Arc<IdentityStore>>,
+    Extension(repos): Extension<Repos>,
     Json(params): Json<CreateEntityParams>,
 ) -> Result<Response, Error> {
     let entity = Entity {
         name: params.name,
         disabled: false,
     };
-    identity_store.create(&entity).await?;
+    repos.entity.create(&entity).await?;
 
     let resp = CreateEntityResponse { entity };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(identity_store, policy_store, permissions))]
+#[tracing::instrument(skip(repos, permissions))]
 pub async fn handle_attach_entity_policy(
-    Extension(identity_store): Extension<Arc<IdentityStore>>,
-    Extension(policy_store): Extension<Arc<PolicyStore>>,
+    Extension(repos): Extension<Repos>,
     Extension(permissions): Extension<Permissions>,
     Json(params): Json<AttachEntityPolicyParams>,
 ) -> Result<Response, Error> {
     // TODO: new endpoint for assigning policies to entity
-    let entity_policies = policy_store.batch_lookup(&params.policy_names).await;
+    let entity_policies = repos.policy.batch_lookup(&params.policy_names).await;
     if entity_policies.len() != params.policy_names.len() {
         let entity_policies_names = entity_policies
             .into_iter()
@@ -81,7 +78,7 @@ pub async fn handle_attach_entity_policy(
 
     let mut attached_policies = vec![];
     for policy in &params.policy_names {
-        if let Err(error) = identity_store.attach_policy(&params.name, policy).await {
+        if let Err(error) = repos.entity.attach_policy(&params.name, policy).await {
             tracing::error!(
                 ?error,
                 policy,
@@ -99,14 +96,14 @@ pub async fn handle_attach_entity_policy(
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(identity_store))]
+#[tracing::instrument(skip(repos))]
 pub async fn handle_attach_entity_alias(
-    Extension(identity_store): Extension<Arc<IdentityStore>>,
+    Extension(repos): Extension<Repos>,
     Json(params): Json<AttachEntityAliasParams>,
 ) -> Result<Response, Error> {
     let mut attached_aliases = vec![];
     for alias in &params.aliases {
-        if let Err(error) = identity_store.attach_alias(&params.name, alias).await {
+        if let Err(error) = repos.entity.attach_alias(&params.name, alias).await {
             tracing::error!(
                 ?error,
                 ?alias,
@@ -124,13 +121,14 @@ pub async fn handle_attach_entity_alias(
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(identity_store))]
+#[tracing::instrument(skip(repos))]
 pub async fn handle_remove_entity_policy(
-    Extension(identity_store): Extension<Arc<IdentityStore>>,
+    Extension(repos): Extension<Repos>,
     Path(name): Path<String>,
     Json(params): Json<RemoveEntityPolicyParams>,
 ) -> Result<Response, Error> {
-    if !identity_store
+    if !repos
+        .entity
         .remove_policy(&name, &params.policy_name)
         .await?
     {
@@ -147,13 +145,13 @@ pub async fn handle_remove_entity_policy(
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(identity_store))]
+#[tracing::instrument(skip(repos))]
 pub async fn handle_remove_entity_alias(
-    Extension(identity_store): Extension<Arc<IdentityStore>>,
+    Extension(repos): Extension<Repos>,
     Path(name): Path<String>,
     Json(params): Json<RemoveEntityAliasParams>,
 ) -> Result<Response, Error> {
-    if !identity_store.remove_alias(&name, &params.alias).await? {
+    if !repos.entity.remove_alias(&name, &params.alias).await? {
         return Err(ErrorType::NotFound(format!(
             "Did not find a alias `{}` for mount `{}` attached to entity `{name}`",
             params.alias.name, params.alias.mount_path

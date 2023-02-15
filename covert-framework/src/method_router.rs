@@ -7,7 +7,7 @@ use covert_types::response::Response;
 use tower::{util::BoxCloneService, Service};
 use tower::{Layer, ServiceExt};
 
-use covert_types::state::VaultState;
+use covert_types::state::StorageState;
 
 use super::handler::Handler;
 
@@ -20,7 +20,7 @@ pub struct Route {
 #[derive(Debug, Clone)]
 pub struct RouteConfig {
     pub policy: AuthPolicy,
-    pub state: Vec<VaultState>,
+    pub state: Vec<StorageState>,
 }
 
 impl RouteConfig {
@@ -37,7 +37,7 @@ impl Default for RouteConfig {
     fn default() -> Self {
         Self {
             policy: AuthPolicy::Authenticated,
-            state: vec![VaultState::Unsealed],
+            state: vec![StorageState::Unsealed],
         }
     }
 }
@@ -64,8 +64,8 @@ impl Service<Request> for Route {
     fn call(&mut self, req: Request) -> Self::Future {
         let state = req
             .extensions
-            .get::<VaultState>()
-            .expect("vault should always have a state");
+            .get::<StorageState>()
+            .expect("the storage should always have a state");
         if !self.config.state.contains(state) {
             let state = *state;
             return Box::pin(async move { Err(ApiError::invalid_state(state)) });

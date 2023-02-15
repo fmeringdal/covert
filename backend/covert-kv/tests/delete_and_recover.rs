@@ -49,8 +49,8 @@ async fn soft_delete_and_recover() {
     for version in [2, 3] {
         let read_resp = sdk.kv.read(MOUNT_PATH, key, Some(version)).await.unwrap();
         assert!(read_resp.data.is_none());
-        assert_eq!(read_resp.metadata.deleted, true);
-        assert_eq!(read_resp.metadata.destroyed, false);
+        assert!(read_resp.metadata.deleted);
+        assert!(!read_resp.metadata.destroyed);
         assert_eq!(read_resp.metadata.min_version, 1);
         assert_eq!(read_resp.metadata.max_version, versions);
         assert_eq!(read_resp.metadata.version, version);
@@ -63,8 +63,8 @@ async fn soft_delete_and_recover() {
             read_resp.data.as_ref(),
             Some(secret_data.get(&version).unwrap())
         );
-        assert_eq!(read_resp.metadata.deleted, false);
-        assert_eq!(read_resp.metadata.destroyed, false);
+        assert!(!read_resp.metadata.deleted);
+        assert!(!read_resp.metadata.destroyed);
         assert_eq!(read_resp.metadata.min_version, 1);
         assert_eq!(read_resp.metadata.max_version, versions);
         assert_eq!(read_resp.metadata.version, version);
@@ -91,8 +91,8 @@ async fn soft_delete_and_recover() {
             read_resp.data.as_ref(),
             Some(secret_data.get(&version).unwrap())
         );
-        assert_eq!(read_resp.metadata.deleted, false);
-        assert_eq!(read_resp.metadata.destroyed, false);
+        assert!(!read_resp.metadata.deleted);
+        assert!(!read_resp.metadata.destroyed);
         assert_eq!(read_resp.metadata.min_version, 1);
         assert_eq!(read_resp.metadata.max_version, versions);
         assert_eq!(read_resp.metadata.version, version);
@@ -140,8 +140,8 @@ async fn hard_delete() {
     for version in [2, 3] {
         let read_resp = sdk.kv.read(MOUNT_PATH, key, Some(version)).await.unwrap();
         assert!(read_resp.data.is_none());
-        assert_eq!(read_resp.metadata.deleted, true);
-        assert_eq!(read_resp.metadata.destroyed, true);
+        assert!(read_resp.metadata.deleted);
+        assert!(read_resp.metadata.destroyed);
         assert_eq!(read_resp.metadata.min_version, 1);
         assert_eq!(read_resp.metadata.max_version, versions);
         assert_eq!(read_resp.metadata.version, version);
@@ -154,8 +154,8 @@ async fn hard_delete() {
             read_resp.data.as_ref(),
             Some(secret_data.get(&version).unwrap())
         );
-        assert_eq!(read_resp.metadata.deleted, false);
-        assert_eq!(read_resp.metadata.destroyed, false);
+        assert!(!read_resp.metadata.deleted);
+        assert!(!read_resp.metadata.destroyed);
         assert_eq!(read_resp.metadata.min_version, 1);
         assert_eq!(read_resp.metadata.max_version, versions);
         assert_eq!(read_resp.metadata.version, version);
@@ -180,8 +180,8 @@ async fn hard_delete() {
     for version in [2, 3] {
         let read_resp = sdk.kv.read(MOUNT_PATH, key, Some(version)).await.unwrap();
         assert!(read_resp.data.is_none());
-        assert_eq!(read_resp.metadata.deleted, true);
-        assert_eq!(read_resp.metadata.destroyed, true);
+        assert!(read_resp.metadata.deleted);
+        assert!(read_resp.metadata.destroyed);
         assert_eq!(read_resp.metadata.min_version, 1);
         assert_eq!(read_resp.metadata.max_version, versions);
         assert_eq!(read_resp.metadata.version, version);

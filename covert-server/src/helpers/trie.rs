@@ -218,42 +218,42 @@ mod tests {
         assert_eq!(
             trie.longest_prefix("/foo"),
             Some(NodeRef {
-                prefix: &"/foo",
+                prefix: "/foo",
                 value: &"foo",
             })
         );
         assert_eq!(
             trie.longest_prefix("/foo/ba"),
             Some(NodeRef {
-                prefix: &"/foo",
+                prefix: "/foo",
                 value: &"foo",
             })
         );
         assert_eq!(
             trie.longest_prefix("/foo/bar"),
             Some(NodeRef {
-                prefix: &"/foo/bar",
+                prefix: "/foo/bar",
                 value: &"foo_bar",
             })
         );
         assert_eq!(
             trie.longest_prefix("/foo/bar/ba"),
             Some(NodeRef {
-                prefix: &"/foo/bar",
+                prefix: "/foo/bar",
                 value: &"foo_bar",
             })
         );
         assert_eq!(
             trie.longest_prefix("/foo/bar/baz"),
             Some(NodeRef {
-                prefix: &"/foo/bar/baz",
+                prefix: "/foo/bar/baz",
                 value: &"foo_bar_baz",
             })
         );
         assert_eq!(
             trie.longest_prefix("/foo/bar/baz/"),
             Some(NodeRef {
-                prefix: &"/foo/bar/baz",
+                prefix: "/foo/bar/baz",
                 value: &"foo_bar_baz",
             })
         );
@@ -272,23 +272,23 @@ mod tests {
             trie.mounts(),
             vec![
                 NodeRef {
-                    prefix: &"/foo",
+                    prefix: "/foo",
                     value: &"foo"
                 },
                 NodeRef {
-                    prefix: &"/foo/bar",
+                    prefix: "/foo/bar",
                     value: &"foo"
                 },
                 NodeRef {
-                    prefix: &"/foo/bar2",
+                    prefix: "/foo/bar2",
                     value: &"foo"
                 },
                 NodeRef {
-                    prefix: &"/foo/bar3",
+                    prefix: "/foo/bar3",
                     value: &"foo"
                 },
                 NodeRef {
-                    prefix: &"/foo/bar4/baz",
+                    prefix: "/foo/bar4/baz",
                     value: &"foo"
                 },
             ]

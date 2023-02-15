@@ -5,12 +5,19 @@ use covert_types::entity::{Entity, EntityAlias};
 
 use crate::error::Error;
 
-/// Store the identities known to Vault
-pub struct IdentityStore {
+pub struct EntityRepo {
     pool: Arc<EncryptedPool>,
 }
 
-impl IdentityStore {
+impl Clone for EntityRepo {
+    fn clone(&self) -> Self {
+        Self {
+            pool: Arc::clone(&self.pool),
+        }
+    }
+}
+
+impl EntityRepo {
     pub fn new(pool: Arc<EncryptedPool>) -> Self {
         Self { pool }
     }
@@ -109,15 +116,15 @@ impl IdentityStore {
 mod tests {
     use covert_types::{
         backend::BackendType,
-        mount::MountEntry,
+        mount::{MountConfig, MountEntry},
         policy::{PathPolicy, Policy},
         request::Operation,
     };
     use uuid::Uuid;
 
-    use crate::store::{
-        mount_store::{tests::pool, MountStore},
-        policy_store::PolicyStore,
+    use crate::repos::{
+        mount::{tests::pool, MountRepo},
+        policy::PolicyRepo,
     };
 
     use super::*;
@@ -125,27 +132,27 @@ mod tests {
     #[tokio::test]
     async fn crud() {
         let pool = Arc::new(pool().await);
-        let policy_store = Arc::new(PolicyStore::new(Arc::clone(&pool)));
-        let identity_store = IdentityStore::new(Arc::clone(&pool));
-        let mount_store = MountStore::new(Arc::clone(&pool));
+        let policy_repo = Arc::new(PolicyRepo::new(Arc::clone(&pool)));
+        let entity_repo = EntityRepo::new(Arc::clone(&pool));
+        let lease_repo = MountRepo::new(Arc::clone(&pool));
 
         // Create some policies
         let foo_policy = Policy::new(
             "foo".into(),
             vec![PathPolicy::new("foo/".into(), vec![Operation::Read])],
         );
-        policy_store.create(&foo_policy).await.unwrap();
+        policy_repo.create(&foo_policy).await.unwrap();
         let bar_policy = Policy::new(
             "bar".into(),
             vec![PathPolicy::new("bar/".into(), vec![Operation::Update])],
         );
-        policy_store.create(&bar_policy).await.unwrap();
+        policy_repo.create(&bar_policy).await.unwrap();
 
         let entity = Entity::new("John".into(), false);
-        assert!(identity_store.create(&entity).await.is_ok());
+        assert!(entity_repo.create(&entity).await.is_ok());
 
         // Attach "foo" policy to "John"
-        assert!(identity_store
+        assert!(entity_repo
             .attach_policy(entity.name(), foo_policy.name())
             .await
             .is_ok());
@@ -154,50 +161,50 @@ mod tests {
         let userpass_mount = MountEntry {
             id: Uuid::new_v4(),
             backend_type: BackendType::Userpass,
-            config: Default::default(),
+            config: MountConfig::default(),
             path: "auth/".into(),
         };
-        mount_store.create(&userpass_mount).await.unwrap();
+        lease_repo.create(&userpass_mount).await.unwrap();
 
         let alias = EntityAlias {
             name: "John-Alias".into(),
             mount_path: userpass_mount.path.clone(),
         };
-        assert!(identity_store
+        assert!(entity_repo
             .attach_alias(entity.name(), &alias)
             .await
             .is_ok());
 
         // Lookup entity by alias
         assert_eq!(
-            identity_store.get_entity_from_alias(&alias).await.unwrap(),
+            entity_repo.get_entity_from_alias(&alias).await.unwrap(),
             Some(entity.clone())
         );
 
         // Remove policy from entity
-        assert!(identity_store
+        assert!(entity_repo
             .remove_policy(entity.name(), foo_policy.name())
             .await
             .unwrap());
         // Remove again fails
-        assert!(!identity_store
+        assert!(!entity_repo
             .remove_policy(entity.name(), foo_policy.name())
             .await
             .unwrap());
 
         // Remove alias from entity
-        assert!(identity_store
+        assert!(entity_repo
             .remove_alias(entity.name(), &alias)
             .await
             .unwrap());
         // Remove again fails
-        assert!(!identity_store
+        assert!(!entity_repo
             .remove_alias(entity.name(), &alias)
             .await
             .unwrap());
         // Lookup entity by alias should now fail
         assert_eq!(
-            identity_store.get_entity_from_alias(&alias).await.unwrap(),
+            entity_repo.get_entity_from_alias(&alias).await.unwrap(),
             None
         );
     }

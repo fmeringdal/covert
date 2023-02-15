@@ -1,19 +1,23 @@
 use std::sync::Arc;
 
+use covert_storage::EncryptedPool;
 use covert_types::{error::ApiError, request::Request};
 use tower::{Layer, Service};
 
-use crate::{response::ResponseWithCtx, Core};
+use crate::response::ResponseWithCtx;
 
 #[derive(Clone)]
 pub struct CoreStateInjector<S> {
-    core: Arc<Core>,
+    storage_pool: Arc<EncryptedPool>,
     inner: S,
 }
 
 impl<S> CoreStateInjector<S> {
-    pub fn new(inner: S, core: Arc<Core>) -> Self {
-        Self { core, inner }
+    pub fn new(inner: S, storage_pool: Arc<EncryptedPool>) -> Self {
+        Self {
+            storage_pool,
+            inner,
+        }
     }
 }
 
@@ -35,19 +39,19 @@ where
     }
 
     fn call(&mut self, mut req: Request) -> Self::Future {
-        let state = self.core.state();
+        let state = self.storage_pool.state();
         req.extensions.insert(state);
         self.inner.call(req)
     }
 }
 
 pub struct CoreStateInjectorLayer {
-    core: Arc<Core>,
+    storage_pool: Arc<EncryptedPool>,
 }
 
 impl CoreStateInjectorLayer {
-    pub fn new(core: Arc<Core>) -> Self {
-        Self { core }
+    pub fn new(storage_pool: Arc<EncryptedPool>) -> Self {
+        Self { storage_pool }
     }
 }
 
@@ -55,6 +59,6 @@ impl<S: Service<Request>> Layer<S> for CoreStateInjectorLayer {
     type Service = CoreStateInjector<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        CoreStateInjector::new(inner, Arc::clone(&self.core))
+        CoreStateInjector::new(inner, Arc::clone(&self.storage_pool))
     }
 }

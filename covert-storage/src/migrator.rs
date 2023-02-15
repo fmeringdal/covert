@@ -213,7 +213,13 @@ pub async fn list_migrations(
 mod tests {
     use super::*;
 
+    #[derive(Debug, sqlx::FromRow, PartialEq, Eq)]
+    struct Tables {
+        name: String,
+    }
+
     #[tokio::test]
+    #[allow(clippy::too_many_lines)]
     async fn migration_works() {
         let pool = EncryptedPool::new(&":memory:".to_string());
         let master_key = pool.initialize().unwrap().unwrap();
@@ -305,11 +311,6 @@ ALTER TABLE USERS
         let res: Vec<Migration> = list_migrations(&pool, mount_id).await.unwrap();
         assert_eq!(res.len(), 3);
 
-        #[derive(Debug, sqlx::FromRow, PartialEq, Eq)]
-        struct Tables {
-            name: String,
-        }
-
         // List tables
         let res: Vec<Tables> = sqlx::query_as("SELECT name FROM sqlite_master WHERE type='table'")
             .fetch_all(&pool)
@@ -319,10 +320,10 @@ ALTER TABLE USERS
             res,
             vec![
                 Tables {
-                    name: format!("MOUNTS")
+                    name: "MOUNTS".to_string()
                 },
                 Tables {
-                    name: format!("_backend_storage_migrations")
+                    name: "_backend_storage_migrations".to_string()
                 },
                 // Tables from migrations
                 Tables {
