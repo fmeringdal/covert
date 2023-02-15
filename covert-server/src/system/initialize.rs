@@ -11,15 +11,21 @@ use crate::{
     repos::Repos,
 };
 
+use super::UnsealProgress;
+
 #[allow(clippy::unused_async)]
 pub async fn handle_initialize(
     Extension(repos): Extension<Repos>,
+    Extension(unseal_progress): Extension<UnsealProgress>,
     Json(body): Json<InitializeParams>,
 ) -> Result<Response, Error> {
     // Sanity check params before making real master key
     if body.threshold == 0 || body.shares < body.threshold {
         return Err(ErrorType::InvalidInitializeParams.into());
     }
+
+    unseal_progress.set_threshold(body.threshold);
+    unseal_progress.set_shares_count(body.shares);
 
     if let Some(master_key) = repos.pool.initialize()? {
         let sharks = sharks::Sharks(body.threshold);
