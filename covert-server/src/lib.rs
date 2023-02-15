@@ -33,7 +33,7 @@ use crate::{
         lease_registration::LeaseRegistrationLayer, request_mapper::LogicalRequestResponseLayer,
     },
     repos::Repos,
-    system::SYSTEM_MOUNT_PATH,
+    system::{UnsealProgress, SYSTEM_MOUNT_PATH},
 };
 
 pub struct Config {
@@ -63,10 +63,12 @@ pub async fn start(config: Config) -> Result<(), anyhow::Error> {
     ));
 
     // Mount system backend
+    let unseal_progress = UnsealProgress::new();
     crate::system::mount(
         &repos,
         Arc::clone(&expiration),
         Arc::clone(&router),
+        unseal_progress,
         SYSTEM_MOUNT_PATH.to_string(),
         BackendType::System,
         MountConfig::default(),

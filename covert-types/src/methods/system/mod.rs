@@ -44,8 +44,16 @@ pub struct UnsealParams {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct UnsealResponse {
-    pub root_token: Token,
+#[serde(tag = "unseal_status", content = "data")]
+pub enum UnsealResponse {
+    #[serde(rename = "complete")]
+    Complete { root_token: Token },
+    #[serde(rename = "in progress")]
+    InProgress {
+        threshold: u8,
+        key_shares_total: u8,
+        key_shares_provided: usize,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
