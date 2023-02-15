@@ -261,6 +261,9 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tracing",
+ "tracing-error",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -372,6 +375,7 @@ dependencies = [
  "covert-framework",
  "covert-kv",
  "covert-psql",
+ "covert-sdk",
  "covert-storage",
  "covert-types",
  "covert-userpass-auth",

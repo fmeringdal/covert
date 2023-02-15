@@ -22,11 +22,10 @@ use covert_storage::EncryptedPool;
 use covert_types::state::VaultState;
 pub use expiration_manager::{ExpirationManager, LeaseEntry};
 pub use router::{Router, RouterService};
+use tokio::sync::oneshot;
 use tower::{make::Shared, ServiceBuilder};
 use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer};
 use tracing::info;
-use tracing_error::ErrorLayer;
-use tracing_subscriber::{prelude::*, EnvFilter};
 
 use crate::{
     expiration_manager::clock::SystemClock,
@@ -45,6 +44,7 @@ pub use self::core::Core;
 pub struct Config {
     pub storage_path: String,
     pub port: u16,
+    pub port_tx: Option<oneshot::Sender<u16>>,
 }
 
 async fn shutdown_signal(core: Arc<Core>) {
@@ -59,18 +59,6 @@ async fn shutdown_signal(core: Arc<Core>) {
 }
 
 pub async fn start(config: Config) -> Result<(), anyhow::Error> {
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("hyper=off,debug"));
-
-    let subscriber = tracing_subscriber::Registry::default()
-        .with(ErrorLayer::default())
-        .with(env_filter)
-        .with(tracing_subscriber::fmt::Layer::default());
-
-    // set the subscriber as the default for the application
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("failed to setup tracing subscriber");
-
     let router = Arc::new(Router::new());
     let encrypted_pool = Arc::new(EncryptedPool::new(&config.storage_path));
 
@@ -99,9 +87,6 @@ pub async fn start(config: Config) -> Result<(), anyhow::Error> {
 
     core.mount_internal_backends().await?;
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
-    info!("listening on {addr}");
-
     let server_router_svc = ServiceBuilder::new()
         .concurrency_limit(1000)
         .timeout(Duration::from_secs(30))
@@ -118,9 +103,15 @@ pub async fn start(config: Config) -> Result<(), anyhow::Error> {
         .layer(Extension(core.clone()))
         .service(RouterService::new(router.clone()));
 
-    let vault_server = hyper::Server::bind(&addr)
-        .serve(Shared::new(server_router_svc))
-        .with_graceful_shutdown(shutdown_signal(core));
+    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
+    let vault_server = hyper::Server::bind(&addr).serve(Shared::new(server_router_svc));
+    let addr = vault_server.local_addr();
+    let vault_server = vault_server.with_graceful_shutdown(shutdown_signal(core));
+
+    info!("listening on {addr}");
+    if let Some(tx) = config.port_tx {
+        let _ = tx.send(addr.port());
+    }
 
     // And run forever...
     if let Err(error) = vault_server.await {

@@ -4,16 +4,14 @@ use covert_framework::extract::{Extension, Json, Path};
 use covert_types::{
     backend::BackendCategory,
     methods::system::{
-        CreateMountParams, CreateMountResponse, DisbaleMountResponse, MountsListItemResponse,
+        CreateMountParams, CreateMountResponse, DisableMountResponse, MountsListItemResponse,
         MountsListResponse, UpdateMountParams, UpdateMountResponse,
     },
-    request::Operation,
     response::Response,
 };
 
 use crate::{
     error::{Error, ErrorType},
-    layer::auth_service::Permissions,
     router::TrieMount,
     Core,
 };
@@ -50,28 +48,12 @@ pub async fn handle_update_mount(
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-pub async fn handle_mounts_list(
-    Extension(core): Extension<Arc<Core>>,
-    Extension(permissions): Extension<Permissions>,
-) -> Result<Response, Error> {
+pub async fn handle_mounts_list(Extension(core): Extension<Arc<Core>>) -> Result<Response, Error> {
     let mut auth = vec![];
     let mut secret = vec![];
 
     for mount in core.router().mounts().await {
         let TrieMount { path, value: re } = mount;
-
-        match &permissions {
-            Permissions::Root => (),
-            Permissions::Unauthenticated => continue,
-            Permissions::Authenticated(policies) => {
-                if !policies
-                    .iter()
-                    .any(|policy| policy.is_authorized(&path, &[Operation::Read]))
-                {
-                    continue;
-                }
-            }
-        }
 
         let mount = MountsListItemResponse {
             id: re.id(),
@@ -95,7 +77,7 @@ pub async fn handle_mount_disable(
     Path(path): Path<String>,
 ) -> Result<Response, Error> {
     let mount = core.remove_mount(&path).await?;
-    let resp = DisbaleMountResponse {
+    let resp = DisableMountResponse {
         mount: MountsListItemResponse {
             id: mount.id,
             path,

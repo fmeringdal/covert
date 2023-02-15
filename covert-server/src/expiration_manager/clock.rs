@@ -137,7 +137,7 @@ pub mod test {
             tx2.send(()).unwrap();
         });
         // Make sure spawn has started
-        tokio::time::sleep(std::time::Duration::from_millis(0)).await;
+        tokio::task::yield_now().await;
 
         assert!(rx1.try_recv().is_err());
         assert!(rx2.try_recv().is_err());
@@ -150,7 +150,7 @@ pub mod test {
         clock.advance(sleep.num_milliseconds());
 
         // Yield to make sure other tasks can complete
-        tokio::time::sleep(std::time::Duration::from_millis(0)).await;
+        tokio::task::yield_now().await;
         assert!(rx1.try_recv().is_ok());
         assert!(rx2.try_recv().is_ok());
     }

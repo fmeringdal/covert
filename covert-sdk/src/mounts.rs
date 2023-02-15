@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 pub use covert_types::backend::{BackendCategory, BackendType};
 pub use covert_types::methods::system::{
-    CreateMountParams, CreateMountResponse, DisbaleMountResponse, MountsListResponse,
+    CreateMountParams, CreateMountResponse, DisableMountResponse, MountsListResponse,
     UpdateMountParams, UpdateMountResponse,
 };
 pub use covert_types::mount::MountConfig;
@@ -40,7 +40,7 @@ impl Client {
         self.client.get("/sys/mounts".into()).await
     }
 
-    pub async fn remove(&self, path: &str) -> Result<DisbaleMountResponse, String> {
+    pub async fn remove(&self, path: &str) -> Result<DisableMountResponse, String> {
         self.client.delete(format!("/sys/mounts/{path}")).await
     }
 }

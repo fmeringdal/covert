@@ -34,7 +34,7 @@ pub async fn handle_entity_create(
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(identity_store, policy_store))]
+#[tracing::instrument(skip(identity_store, policy_store, permissions))]
 pub async fn handle_attach_entity_policy(
     Extension(identity_store): Extension<Arc<IdentityStore>>,
     Extension(policy_store): Extension<Arc<PolicyStore>>,

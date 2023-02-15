@@ -15,45 +15,45 @@ use crate::{
 pub use entity::*;
 pub use policy::*;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InitializeParams {
     pub shares: u8,
     pub threshold: u8,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum InitializeResponse {
     NewKeyShares(InitializedKeyShares),
     ExistingKey(InitializedWithExistingKey),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InitializedKeyShares {
     pub shares: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InitializedWithExistingKey {
     pub message: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UnsealParams {
     pub shares: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UnsealResponse {
     pub root_token: Token,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SealResponse {
     pub message: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StatusResponse {
     pub state: VaultState,
 }
@@ -98,7 +98,7 @@ pub struct MountsListResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DisbaleMountResponse {
+pub struct DisableMountResponse {
     pub mount: MountsListItemResponse,
 }
 
