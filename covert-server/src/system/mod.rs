@@ -17,13 +17,10 @@ use covert_framework::{
 use covert_types::{
     auth::AuthPolicy,
     backend::{BackendCategory, BackendType},
-    state::VaultState,
+    state::StorageState,
 };
 
-use crate::{
-    store::{identity_store::IdentityStore, policy_store::PolicyStore, token_store::TokenStore},
-    ExpirationManager,
-};
+use crate::{repos::Repos, ExpirationManager};
 
 use self::{
     entity::{
@@ -42,12 +39,14 @@ use self::{
     token::handle_token_revocation,
     unseal::handle_unseal,
 };
+pub use mount::mount;
 pub use token::RevokeTokenParams;
 
+pub const SYSTEM_MOUNT_PATH: &str = "sys/";
+
 pub fn new_system_backend(
-    token_store: Arc<TokenStore>,
-    policy_store: Arc<PolicyStore>,
-    identity_store: Arc<IdentityStore>,
+    repos: Repos,
+    router: Arc<crate::Router>,
     expiration_manager: Arc<ExpirationManager>,
 ) -> Backend {
     let router = Router::new()
@@ -57,14 +56,14 @@ pub fn new_system_backend(
                 handle_unseal,
                 RouteConfig {
                     policy: AuthPolicy::Unauthenticated,
-                    state: vec![VaultState::Sealed],
+                    state: vec![StorageState::Sealed],
                 },
             )
             .update_with_config(
                 handle_unseal,
                 RouteConfig {
                     policy: AuthPolicy::Unauthenticated,
-                    state: vec![VaultState::Sealed],
+                    state: vec![StorageState::Sealed],
                 },
             ),
         )
@@ -74,14 +73,14 @@ pub fn new_system_backend(
                 handle_seal,
                 RouteConfig {
                     policy: AuthPolicy::Unauthenticated,
-                    state: vec![VaultState::Unsealed],
+                    state: vec![StorageState::Unsealed],
                 },
             )
             .update_with_config(
                 handle_seal,
                 RouteConfig {
                     policy: AuthPolicy::Unauthenticated,
-                    state: vec![VaultState::Unsealed],
+                    state: vec![StorageState::Unsealed],
                 },
             ),
         )
@@ -91,14 +90,14 @@ pub fn new_system_backend(
                 handle_initialize,
                 RouteConfig {
                     policy: AuthPolicy::Unauthenticated,
-                    state: vec![VaultState::Uninitialized],
+                    state: vec![StorageState::Uninitialized],
                 },
             )
             .update_with_config(
                 handle_initialize,
                 RouteConfig {
                     policy: AuthPolicy::Unauthenticated,
-                    state: vec![VaultState::Uninitialized],
+                    state: vec![StorageState::Uninitialized],
                 },
             ),
         )
@@ -109,9 +108,9 @@ pub fn new_system_backend(
                 RouteConfig {
                     policy: AuthPolicy::Unauthenticated,
                     state: vec![
-                        VaultState::Uninitialized,
-                        VaultState::Sealed,
-                        VaultState::Unsealed,
+                        StorageState::Uninitialized,
+                        StorageState::Sealed,
+                        StorageState::Unsealed,
                     ],
                 },
             ),
@@ -145,9 +144,8 @@ pub fn new_system_backend(
         .route("/entity/alias", update(handle_attach_entity_alias))
         .route("/entity/alias/*name", update(handle_remove_entity_alias))
         .layer(Extension(expiration_manager))
-        .layer(Extension(token_store))
-        .layer(Extension(policy_store))
-        .layer(Extension(identity_store))
+        .layer(Extension(router))
+        .layer(Extension(repos))
         .build()
         .into_service();
 

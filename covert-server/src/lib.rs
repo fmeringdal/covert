@@ -5,21 +5,20 @@
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::missing_errors_doc)]
 
-mod core;
 mod error;
 mod expiration_manager;
 mod helpers;
 mod layer;
+mod migrations;
+mod repos;
 mod response;
 mod router;
-mod store;
 mod system;
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use covert_framework::extract::Extension;
 use covert_storage::EncryptedPool;
-use covert_types::state::VaultState;
+use covert_types::{backend::BackendType, mount::MountConfig};
 pub use expiration_manager::{ExpirationManager, LeaseEntry};
 pub use router::{Router, RouterService};
 use tokio::sync::oneshot;
@@ -33,13 +32,9 @@ use crate::{
         auth_service::AuthServiceLayer, core_extension::CoreStateInjectorLayer,
         lease_registration::LeaseRegistrationLayer, request_mapper::LogicalRequestResponseLayer,
     },
-    store::{
-        identity_store::IdentityStore, lease_store::LeaseStore, mount_store::MountStore,
-        policy_store::PolicyStore, token_store::TokenStore,
-    },
+    repos::Repos,
+    system::SYSTEM_MOUNT_PATH,
 };
-
-pub use self::core::Core;
 
 pub struct Config {
     pub storage_path: String,
@@ -47,45 +42,37 @@ pub struct Config {
     pub port_tx: Option<oneshot::Sender<u16>>,
 }
 
-async fn shutdown_signal(core: Arc<Core>) {
+async fn shutdown_signal() {
     // Wait for the CTRL+C signal
     tokio::signal::ctrl_c()
         .await
         .expect("failed to install CTRL+C signal handler");
     info!("Shutdown signal received");
-    if core.state() == VaultState::Unsealed && core.seal().await.is_err() {
-        tracing::error!("Failed to seal Vault");
-    }
 }
 
 pub async fn start(config: Config) -> Result<(), anyhow::Error> {
     let router = Arc::new(Router::new());
     let encrypted_pool = Arc::new(EncryptedPool::new(&config.storage_path));
-
-    let mount_store = Arc::new(MountStore::new(encrypted_pool.clone()));
-    let lease_store = Arc::new(LeaseStore::new(encrypted_pool.clone()));
-    let token_store = Arc::new(TokenStore::new(encrypted_pool.clone()));
-    let policy_store = Arc::new(PolicyStore::new(encrypted_pool.clone()));
-    let identity_store = Arc::new(IdentityStore::new(encrypted_pool.clone()));
+    let repos = Repos::new(encrypted_pool);
 
     let expiration = Arc::new(ExpirationManager::new(
         Arc::clone(&router),
-        lease_store,
-        mount_store.clone(),
+        repos.lease.clone(),
+        repos.mount.clone(),
         SystemClock::new(),
     ));
 
-    let core = Arc::new(Core::new(
-        encrypted_pool.clone(),
-        router.clone(),
-        expiration.clone(),
-        identity_store.clone(),
-        policy_store.clone(),
-        token_store.clone(),
-        mount_store,
-    ));
-
-    core.mount_internal_backends().await?;
+    // Mount system backend
+    crate::system::mount(
+        &repos,
+        Arc::clone(&expiration),
+        Arc::clone(&router),
+        SYSTEM_MOUNT_PATH.to_string(),
+        BackendType::System,
+        MountConfig::default(),
+        true,
+    )
+    .await?;
 
     let server_router_svc = ServiceBuilder::new()
         .concurrency_limit(1000)
@@ -93,20 +80,19 @@ pub async fn start(config: Config) -> Result<(), anyhow::Error> {
         .layer(RequestBodyLimitLayer::new(1024 * 16))
         .layer(CorsLayer::permissive())
         .layer(LogicalRequestResponseLayer::new())
-        .layer(CoreStateInjectorLayer::new(core.clone()))
-        .layer(AuthServiceLayer::new(token_store.clone()))
+        .layer(CoreStateInjectorLayer::new(Arc::clone(&repos.pool)))
+        .layer(AuthServiceLayer::new(repos.token.clone()))
         .layer(LeaseRegistrationLayer::new(
             expiration.clone(),
-            token_store.clone(),
-            identity_store.clone(),
+            repos.token.clone(),
+            repos.entity.clone(),
         ))
-        .layer(Extension(core.clone()))
         .service(RouterService::new(router.clone()));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
-    let vault_server = hyper::Server::bind(&addr).serve(Shared::new(server_router_svc));
-    let addr = vault_server.local_addr();
-    let vault_server = vault_server.with_graceful_shutdown(shutdown_signal(core));
+    let covert_server = hyper::Server::bind(&addr).serve(Shared::new(server_router_svc));
+    let addr = covert_server.local_addr();
+    let covert_server = covert_server.with_graceful_shutdown(shutdown_signal());
 
     info!("listening on {addr}");
     if let Some(tx) = config.port_tx {
@@ -114,7 +100,7 @@ pub async fn start(config: Config) -> Result<(), anyhow::Error> {
     }
 
     // And run forever...
-    if let Err(error) = vault_server.await {
+    if let Err(error) = covert_server.await {
         tracing::error!(?error, "Encountered server error. Shutting down.");
         return Err(error.into());
     }

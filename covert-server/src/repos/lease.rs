@@ -8,11 +8,19 @@ use crate::{
     LeaseEntry,
 };
 
-pub struct LeaseStore {
+pub struct LeaseRepo {
     pool: Arc<EncryptedPool>,
 }
 
-impl LeaseStore {
+impl Clone for LeaseRepo {
+    fn clone(&self) -> Self {
+        Self {
+            pool: Arc::clone(&self.pool),
+        }
+    }
+}
+
+impl LeaseRepo {
     pub fn new(pool: Arc<EncryptedPool>) -> Self {
         Self { pool }
     }
@@ -170,32 +178,36 @@ impl LeaseStore {
 #[cfg(test)]
 mod tests {
     use chrono::{Duration, Utc};
-    use covert_types::{backend::BackendType, mount::MountEntry};
+    use covert_types::{
+        backend::BackendType,
+        mount::{MountConfig, MountEntry},
+    };
     use uuid::Uuid;
 
-    use crate::store::mount_store::{tests::pool, MountStore};
+    use crate::repos::mount::{tests::pool, MountRepo};
 
     use super::*;
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)]
     async fn crud() {
         let pool = Arc::new(pool().await);
-        let mount_store = MountStore::new(Arc::clone(&pool));
-        let lease_store = LeaseStore::new(Arc::clone(&pool));
+        let mount_repo = MountRepo::new(Arc::clone(&pool));
+        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
 
         // Create postgres mount
         let userpass_mount = MountEntry {
             id: Uuid::new_v4(),
             backend_type: BackendType::Postgres,
-            config: Default::default(),
+            config: MountConfig::default(),
             path: "psql/".into(),
         };
-        mount_store.create(&userpass_mount).await.unwrap();
+        mount_repo.create(&userpass_mount).await.unwrap();
 
         let expires_at = Utc::now();
 
         // Nothing in beginning
-        assert!(lease_store.peek().await.unwrap().is_none());
+        assert!(lease_repo.peek().await.unwrap().is_none());
 
         // Create some leases
         let mut lease_foo_bar = LeaseEntry {
@@ -210,9 +222,9 @@ mod tests {
             last_renewal_time: Utc::now(),
             failed_revocation_attempts: 0,
         };
-        assert!(lease_store.create(&lease_foo_bar).await.is_ok());
+        assert!(lease_repo.create(&lease_foo_bar).await.is_ok());
         assert_eq!(
-            lease_store.peek().await.unwrap(),
+            lease_repo.peek().await.unwrap(),
             Some(lease_foo_bar.clone())
         );
 
@@ -228,19 +240,19 @@ mod tests {
             last_renewal_time: Utc::now(),
             failed_revocation_attempts: 0,
         };
-        assert!(lease_store.create(&lease_bar_foo).await.is_ok());
+        assert!(lease_repo.create(&lease_bar_foo).await.is_ok());
         assert_eq!(
-            lease_store.peek().await.unwrap(),
+            lease_repo.peek().await.unwrap(),
             Some(lease_bar_foo.clone())
         );
 
         // Pull
         assert_eq!(
-            lease_store.pull(100, expires_at).await.unwrap(),
+            lease_repo.pull(100, expires_at).await.unwrap(),
             vec![lease_bar_foo.clone(), lease_foo_bar.clone()]
         );
-        assert_eq!(lease_store.pull(1, expires_at).await.unwrap().len(), 1);
-        assert!(lease_store
+        assert_eq!(lease_repo.pull(1, expires_at).await.unwrap().len(), 1);
+        assert!(lease_repo
             .pull(100, expires_at - Duration::seconds(1))
             .await
             .unwrap()
@@ -248,20 +260,20 @@ mod tests {
 
         // List all
         assert_eq!(
-            lease_store.list().await.unwrap(),
+            lease_repo.list().await.unwrap(),
             vec![lease_foo_bar.clone(), lease_bar_foo.clone()]
         );
 
         // List by mount path prefix
         assert_eq!(
-            lease_store
+            lease_repo
                 .list_by_mount_prefix(&userpass_mount.path)
                 .await
                 .unwrap(),
             vec![lease_foo_bar.clone(), lease_bar_foo.clone()]
         );
         assert_eq!(
-            lease_store
+            lease_repo
                 .list_by_mount_prefix("random_foo_bar/")
                 .await
                 .unwrap(),
@@ -271,7 +283,7 @@ mod tests {
         // Renew
         lease_foo_bar.expires_at += chrono::Duration::hours(1);
         lease_foo_bar.last_renewal_time += chrono::Duration::hours(1);
-        assert!(lease_store
+        assert!(lease_repo
             .renew(
                 &lease_foo_bar.id,
                 lease_bar_foo.expires_at,
@@ -282,28 +294,28 @@ mod tests {
 
         // Lookup by id
         assert_eq!(
-            lease_store.lookup(lease_foo_bar.id()).await.unwrap(),
+            lease_repo.lookup(lease_foo_bar.id()).await.unwrap(),
             Some(lease_foo_bar.clone())
         );
 
         // Delete one lease
-        assert!(lease_store.delete(lease_foo_bar.id()).await.unwrap());
+        assert!(lease_repo.delete(lease_foo_bar.id()).await.unwrap());
 
         // And it should be gone
         assert_eq!(
-            lease_store.list().await.unwrap(),
+            lease_repo.list().await.unwrap(),
             vec![lease_bar_foo.clone()]
         );
 
         // Increment on failure
         lease_bar_foo.expires_at += Duration::seconds(10);
         lease_bar_foo.failed_revocation_attempts += 1;
-        assert!(lease_store
+        assert!(lease_repo
             .increment_failed_revocation_attempts(lease_bar_foo.id(), lease_bar_foo.expires_at)
             .await
             .is_ok());
 
-        let lease_bar_foo_from_store = lease_store
+        let lease_bar_foo_from_store = lease_repo
             .lookup(lease_bar_foo.id())
             .await
             .unwrap()

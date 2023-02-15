@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use covert_types::state::VaultState;
+use covert_types::state::StorageState;
 use futures::Stream;
 use sqlx::{
     sqlite::{SqliteQueryResult, SqliteRow},
@@ -123,10 +123,10 @@ impl PoolState {
     /// Returns error if the storage is not unsealed.
     pub fn get_unsealed(&self) -> Result<&Storage<Unsealed>, EncryptedPoolError> {
         match self {
-            PoolState::Uninitialized(_) => {
-                Err(EncryptedPoolError::InvalidState(VaultState::Uninitialized))
-            }
-            PoolState::Sealed(_) => Err(EncryptedPoolError::InvalidState(VaultState::Sealed)),
+            PoolState::Uninitialized(_) => Err(EncryptedPoolError::InvalidState(
+                StorageState::Uninitialized,
+            )),
+            PoolState::Sealed(_) => Err(EncryptedPoolError::InvalidState(StorageState::Sealed)),
             PoolState::Unsealed(b) => Ok(b),
         }
     }
@@ -135,9 +135,12 @@ impl PoolState {
 #[derive(Debug, thiserror::Error)]
 pub enum EncryptedPoolError {
     #[error("This operation is not allowed when the current state is `{0}`")]
-    InvalidState(VaultState),
+    InvalidState(StorageState),
     #[error("Failed to transition the pool state from `{from}` to `{to}`")]
-    Transition { from: VaultState, to: VaultState },
+    Transition {
+        from: StorageState,
+        to: StorageState,
+    },
 }
 
 impl EncryptedPool {
@@ -171,7 +174,7 @@ impl EncryptedPool {
         })))
     }
 
-    pub fn state(&self) -> VaultState {
+    pub fn state(&self) -> StorageState {
         #[allow(clippy::redundant_closure_for_method_calls)]
         self.0.map(|barrier| barrier.into())
     }
@@ -188,13 +191,13 @@ impl EncryptedPool {
                 PoolState::Sealed(barrier) => {
                     return TransitionResult {
                         state: PoolState::Sealed(barrier),
-                        result: Err(EncryptedPoolError::InvalidState(VaultState::Sealed)),
+                        result: Err(EncryptedPoolError::InvalidState(StorageState::Sealed)),
                     }
                 }
                 PoolState::Unsealed(barrier) => {
                     return TransitionResult {
                         state: PoolState::Unsealed(barrier),
-                        result: Err(EncryptedPoolError::InvalidState(VaultState::Unsealed)),
+                        result: Err(EncryptedPoolError::InvalidState(StorageState::Unsealed)),
                     }
                 }
             };
@@ -207,8 +210,8 @@ impl EncryptedPool {
                 Err(barrier) => TransitionResult {
                     state: PoolState::Uninitialized(barrier),
                     result: Err(EncryptedPoolError::Transition {
-                        from: VaultState::Uninitialized,
-                        to: VaultState::Sealed,
+                        from: StorageState::Uninitialized,
+                        to: StorageState::Sealed,
                     }),
                 },
             }
@@ -226,14 +229,16 @@ impl EncryptedPool {
                 PoolState::Uninitialized(barrier) => {
                     return TransitionResult {
                         state: PoolState::Uninitialized(barrier),
-                        result: Err(EncryptedPoolError::InvalidState(VaultState::Uninitialized)),
+                        result: Err(EncryptedPoolError::InvalidState(
+                            StorageState::Uninitialized,
+                        )),
                     }
                 }
                 PoolState::Sealed(barrier) => barrier,
                 PoolState::Unsealed(barrier) => {
                     return TransitionResult {
                         state: PoolState::Unsealed(barrier),
-                        result: Err(EncryptedPoolError::InvalidState(VaultState::Unsealed)),
+                        result: Err(EncryptedPoolError::InvalidState(StorageState::Unsealed)),
                     }
                 }
             };
@@ -246,8 +251,8 @@ impl EncryptedPool {
                 Err(barrier) => TransitionResult {
                     state: PoolState::Sealed(barrier),
                     result: Err(EncryptedPoolError::Transition {
-                        from: VaultState::Sealed,
-                        to: VaultState::Unsealed,
+                        from: StorageState::Sealed,
+                        to: StorageState::Unsealed,
                     }),
                 },
             }
@@ -265,13 +270,15 @@ impl EncryptedPool {
                 PoolState::Uninitialized(barrier) => {
                     return TransitionResult {
                         state: PoolState::Uninitialized(barrier),
-                        result: Err(EncryptedPoolError::InvalidState(VaultState::Uninitialized)),
+                        result: Err(EncryptedPoolError::InvalidState(
+                            StorageState::Uninitialized,
+                        )),
                     }
                 }
                 PoolState::Sealed(barrier) => {
                     return TransitionResult {
                         state: PoolState::Sealed(barrier),
-                        result: Err(EncryptedPoolError::InvalidState(VaultState::Sealed)),
+                        result: Err(EncryptedPoolError::InvalidState(StorageState::Sealed)),
                     }
                 }
                 PoolState::Unsealed(barrier) => barrier,
@@ -305,12 +312,12 @@ impl EncryptedPool {
     }
 }
 
-impl From<&PoolState> for VaultState {
+impl From<&PoolState> for StorageState {
     fn from(barrier: &PoolState) -> Self {
         match barrier {
-            PoolState::Uninitialized(_) => VaultState::Uninitialized,
-            PoolState::Sealed(_) => VaultState::Sealed,
-            PoolState::Unsealed(_) => VaultState::Unsealed,
+            PoolState::Uninitialized(_) => StorageState::Uninitialized,
+            PoolState::Sealed(_) => StorageState::Sealed,
+            PoolState::Unsealed(_) => StorageState::Unsealed,
         }
     }
 }
@@ -321,30 +328,30 @@ mod tests {
 
     #[sqlx::test]
     async fn unseal_and_query() {
+        let query = "SELECT count(*) FROM sqlite_master";
+
         let pool = EncryptedPool::new(&":memory:".to_string());
 
-        const QUERY: &str = "SELECT count(*) FROM sqlite_master";
-
-        let res = sqlx::query(QUERY).execute(&pool).await;
+        let res = sqlx::query(query).execute(&pool).await;
         assert!(matches!(res.unwrap_err(), sqlx::Error::PoolClosed));
 
         let master_key = pool.initialize().unwrap().unwrap();
-        let res = sqlx::query(QUERY).execute(&pool).await;
+        let res = sqlx::query(query).execute(&pool).await;
         assert!(matches!(res.unwrap_err(), sqlx::Error::PoolClosed));
 
         // Unseal and we should get a success response
         pool.unseal(master_key.clone()).unwrap();
-        let res = sqlx::query(QUERY).execute(&pool).await;
+        let res = sqlx::query(query).execute(&pool).await;
         assert!(res.is_ok());
 
         // Seal and we should not be able to query
         pool.seal().unwrap();
-        let res = sqlx::query(QUERY).execute(&pool).await;
+        let res = sqlx::query(query).execute(&pool).await;
         assert!(matches!(res.unwrap_err(), sqlx::Error::PoolClosed));
 
         // Unseal again and we should get a success response
         pool.unseal(master_key).unwrap();
-        let res = sqlx::query(QUERY).execute(&pool).await;
+        let res = sqlx::query(query).execute(&pool).await;
         assert!(res.is_ok());
     }
 }

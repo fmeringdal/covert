@@ -469,14 +469,14 @@ mod tests {
     #[test]
     fn table_rename_not_supported() {
         let sql = "ALTER TABLE users RENAME TO old_users";
-        let err = ScopedQuery::new("foo_", sql.into()).unwrap_err();
+        let err = ScopedQuery::new("foo_", sql).unwrap_err();
         assert_eq!(err, Error::TableRenameNotSupported);
     }
 
     #[test]
     fn unsupported_analyze_statement() {
         let sql = "ANALYZE TABLE users";
-        let err = ScopedQuery::new("foo_", sql.into()).unwrap_err();
+        let err = ScopedQuery::new("foo_", sql).unwrap_err();
         assert_eq!(
             err,
             Error::UnsupportedStatement(Statement::Analyze {
@@ -484,12 +484,12 @@ mod tests {
                     value: "users".into(),
                     quote_style: None
                 }]),
-                partitions: Default::default(),
-                for_columns: Default::default(),
-                columns: Default::default(),
-                cache_metadata: Default::default(),
-                noscan: Default::default(),
-                compute_statistics: Default::default()
+                partitions: None,
+                for_columns: false,
+                columns: Vec::default(),
+                cache_metadata: false,
+                noscan: false,
+                compute_statistics: false
             })
         );
     }
@@ -516,14 +516,14 @@ VALUES(200,'+',1000,datetime('now'));
 COMMIT;
         "#;
         let expected_scoped_sql = r#"START TRANSACTION;UPDATE foo_accounts SET balance = balance - 1000 WHERE account_no = 100;UPDATE foo_accounts SET balance = balance + 1000 WHERE account_no = 200;INSERT INTO foo_account_changes (account_no, flag, amount, changed_at) VALUES (100, '-', 1000, datetime('now'));INSERT INTO foo_account_changes (account_no, flag, amount, changed_at) VALUES (200, '+', 1000, datetime('now'));COMMIT;"#;
-        let scoped_sql = ScopedQuery::new("foo_", sql.into()).unwrap();
+        let scoped_sql = ScopedQuery::new("foo_", sql).unwrap();
         assert_eq!(scoped_sql.sql(), expected_scoped_sql);
     }
 
     #[test]
     fn pragma_not_working() {
         let sql = "PRAGMA rekey = 'newkey'";
-        assert!(ScopedQuery::new("foo_", sql.into()).is_err());
+        assert!(ScopedQuery::new("foo_", sql).is_err());
     }
 
     #[test]
@@ -545,7 +545,7 @@ COMMIT;
         ];
         for test in tests {
             assert_eq!(
-                ScopedQuery::new("foo_", test.into()),
+                ScopedQuery::new("foo_", test),
                 Err(Error::SystemTableRestrict)
             );
         }

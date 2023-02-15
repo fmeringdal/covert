@@ -91,7 +91,7 @@ pub mod test {
         ) -> Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>> {
             let start = self.duration.load(Ordering::SeqCst);
             let millis = duration.as_millis();
-            let until = start + millis as i64;
+            let until = start + i64::try_from(millis).unwrap();
 
             let this = self.clone();
 

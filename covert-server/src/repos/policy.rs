@@ -5,11 +5,19 @@ use covert_types::policy::Policy;
 
 use crate::error::{Error, ErrorType};
 
-pub struct PolicyStore {
+pub struct PolicyRepo {
     pool: Arc<EncryptedPool>,
 }
 
-impl PolicyStore {
+impl Clone for PolicyRepo {
+    fn clone(&self) -> Self {
+        Self {
+            pool: Arc::clone(&self.pool),
+        }
+    }
+}
+
+impl PolicyRepo {
     pub fn new(pool: Arc<EncryptedPool>) -> Self {
         Self { pool }
     }
@@ -104,14 +112,14 @@ impl TryFrom<PolicyRaw> for Policy {
 
 #[cfg(test)]
 mod tests {
-    use crate::store::mount_store::tests::pool;
+    use crate::repos::mount::tests::pool;
 
     use super::*;
 
     #[tokio::test]
     async fn crud() {
         let pool = pool().await;
-        let store = PolicyStore::new(Arc::new(pool));
+        let store = PolicyRepo::new(Arc::new(pool));
 
         let policy = Policy {
             name: "foo".into(),

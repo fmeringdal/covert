@@ -42,24 +42,24 @@ pub fn calculate_ttl(
 mod tests {
     use super::*;
 
+    fn calculate_ttl_std(
+        now: DateTime<Utc>,
+        issued_at: DateTime<Utc>,
+        mount_config: &MountConfig,
+        ttl: Option<std::time::Duration>,
+    ) -> std::time::Duration {
+        calculate_ttl(now, issued_at, mount_config, ttl)
+            .unwrap()
+            .to_std()
+            .unwrap()
+    }
+
     #[test]
     fn ttl_calculation() {
         let mount_config = MountConfig {
             default_lease_ttl: std::time::Duration::from_secs(30),
             max_lease_ttl: std::time::Duration::from_secs(3600),
         };
-
-        fn calculate_ttl_std(
-            now: DateTime<Utc>,
-            issued_at: DateTime<Utc>,
-            mount_config: &MountConfig,
-            ttl: Option<std::time::Duration>,
-        ) -> std::time::Duration {
-            calculate_ttl(now, issued_at, mount_config, ttl)
-                .unwrap()
-                .to_std()
-                .unwrap()
-        }
 
         let mut now = Utc::now();
         let issued_at = now;

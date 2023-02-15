@@ -136,6 +136,8 @@ impl PathPolicy {
 mod tests {
     use super::*;
 
+    use Operation::{Create, Delete, Read, Update};
+
     #[test]
     fn parses_policy() {
         let default_policy = r#"
@@ -224,7 +226,6 @@ path "sys/control-group/request" {
         let parse_result = PathPolicy::parse(default_policy);
         assert!(parse_result.is_ok());
         let policies = parse_result.unwrap();
-        use Operation::{Create, Delete, Read, Update};
         assert_eq!(
             policies,
             vec![
@@ -299,22 +300,22 @@ path "sys/control-group/request" {
             path: "sys/mounts".into(),
             operations: vec![Read],
         };
-        assert_eq!(policy.is_authorized("sys/mounts", &[Read]), true);
-        assert_eq!(policy.is_authorized("sys/mounts", &[Update]), false);
-        assert_eq!(policy.is_authorized("sys/mounts/", &[Read]), false);
-        assert_eq!(policy.is_authorized("sys/", &[Read]), false);
-        assert_eq!(policy.is_authorized("secret/", &[Read]), false);
-        assert_eq!(policy.is_authorized("/", &[Read]), false);
+        assert!(policy.is_authorized("sys/mounts", &[Read]));
+        assert!(!policy.is_authorized("sys/mounts", &[Update]));
+        assert!(!policy.is_authorized("sys/mounts/", &[Read]));
+        assert!(!policy.is_authorized("sys/", &[Read]));
+        assert!(!policy.is_authorized("secret/", &[Read]));
+        assert!(!policy.is_authorized("/", &[Read]));
 
         let policy = PathPolicy {
             path: "sys/*".into(),
             operations: vec![Read, Update],
         };
-        assert_eq!(policy.is_authorized("sys/mounts", &[Read]), true);
-        assert_eq!(policy.is_authorized("sys/mounts", &[Update]), true);
-        assert_eq!(policy.is_authorized("sys/mounts/", &[Read]), true);
-        assert_eq!(policy.is_authorized("sys/", &[Read]), true);
-        assert_eq!(policy.is_authorized("secret/", &[Read]), false);
-        assert_eq!(policy.is_authorized("/", &[Read]), false);
+        assert!(policy.is_authorized("sys/mounts", &[Read]));
+        assert!(policy.is_authorized("sys/mounts", &[Update]));
+        assert!(policy.is_authorized("sys/mounts/", &[Read]));
+        assert!(policy.is_authorized("sys/", &[Read]));
+        assert!(!policy.is_authorized("secret/", &[Read]));
+        assert!(!policy.is_authorized("/", &[Read]));
     }
 }

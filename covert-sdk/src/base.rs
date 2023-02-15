@@ -53,7 +53,7 @@ impl BaseClient {
         let client = reqwest::Client::new();
         let mut request_builder = client.get(format!("{}{}", self.api_url, path));
         if let Some(token) = self.token.as_ref() {
-            request_builder = request_builder.header("X-Vault-Token", token);
+            request_builder = request_builder.header("X-Covert-Token", token);
         }
         Self::send(request_builder).await
     }
@@ -65,7 +65,7 @@ impl BaseClient {
         let client = reqwest::Client::new();
         let mut request_builder = client.delete(format!("{}{}", self.api_url, path));
         if let Some(token) = self.token.as_ref() {
-            request_builder = request_builder.header("X-Vault-Token", token);
+            request_builder = request_builder.header("X-Covert-Token", token);
         }
         Self::send(request_builder).await
     }
@@ -78,7 +78,7 @@ impl BaseClient {
         let client = reqwest::Client::new();
         let mut request_builder = client.put(format!("{}{}", self.api_url, path)).json(body);
         if let Some(token) = self.token.as_ref() {
-            request_builder = request_builder.header("X-Vault-Token", token);
+            request_builder = request_builder.header("X-Covert-Token", token);
         }
         Self::send(request_builder).await
     }
@@ -91,7 +91,7 @@ impl BaseClient {
         let client = reqwest::Client::new();
         let mut request_builder = client.post(format!("{}{}", self.api_url, path)).json(body);
         if let Some(token) = self.token.as_ref() {
-            request_builder = request_builder.header("X-Vault-Token", token);
+            request_builder = request_builder.header("X-Covert-Token", token);
         }
         Self::send(request_builder).await
     }

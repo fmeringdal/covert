@@ -37,8 +37,8 @@ async fn create_and_read() {
     // Read without version
     let read_resp = sdk.kv.read(MOUNT_PATH, key, None).await.unwrap();
     assert_eq!(read_resp.data, Some(data_v1.clone()));
-    assert_eq!(read_resp.metadata.deleted, false);
-    assert_eq!(read_resp.metadata.destroyed, false);
+    assert!(!read_resp.metadata.deleted);
+    assert!(!read_resp.metadata.destroyed);
     assert_eq!(read_resp.metadata.min_version, 1);
     assert_eq!(read_resp.metadata.max_version, 1);
     assert_eq!(read_resp.metadata.version, 1);
@@ -47,8 +47,8 @@ async fn create_and_read() {
     // Read with explicit version
     let read_resp = sdk.kv.read(MOUNT_PATH, key, Some(1)).await.unwrap();
     assert_eq!(read_resp.data, Some(data_v1.clone()));
-    assert_eq!(read_resp.metadata.deleted, false);
-    assert_eq!(read_resp.metadata.destroyed, false);
+    assert!(!read_resp.metadata.deleted);
+    assert!(!read_resp.metadata.destroyed);
     assert_eq!(read_resp.metadata.min_version, 1);
     assert_eq!(read_resp.metadata.max_version, 1);
     assert_eq!(read_resp.metadata.version, 1);
@@ -90,8 +90,8 @@ async fn create_and_read() {
     // Read without version
     let read_resp = sdk.kv.read(MOUNT_PATH, key, None).await.unwrap();
     assert_eq!(read_resp.data, Some(data_v2.clone()));
-    assert_eq!(read_resp.metadata.deleted, false);
-    assert_eq!(read_resp.metadata.destroyed, false);
+    assert!(!read_resp.metadata.deleted);
+    assert!(!read_resp.metadata.destroyed);
     assert_eq!(read_resp.metadata.min_version, 1);
     assert_eq!(read_resp.metadata.max_version, 2);
     assert_eq!(read_resp.metadata.version, 2);
@@ -99,8 +99,8 @@ async fn create_and_read() {
     // Read with explicit version
     let read_resp = sdk.kv.read(MOUNT_PATH, key, Some(2)).await.unwrap();
     assert_eq!(read_resp.data, Some(data_v2.clone()));
-    assert_eq!(read_resp.metadata.deleted, false);
-    assert_eq!(read_resp.metadata.destroyed, false);
+    assert!(!read_resp.metadata.deleted);
+    assert!(!read_resp.metadata.destroyed);
     assert_eq!(read_resp.metadata.min_version, 1);
     assert_eq!(read_resp.metadata.max_version, 2);
     assert_eq!(read_resp.metadata.version, 2);
@@ -108,8 +108,8 @@ async fn create_and_read() {
     // Read version 1 still possible
     let read_resp = sdk.kv.read(MOUNT_PATH, key, Some(1)).await.unwrap();
     assert_eq!(read_resp.data, Some(data_v1.clone()));
-    assert_eq!(read_resp.metadata.deleted, false);
-    assert_eq!(read_resp.metadata.destroyed, false);
+    assert!(!read_resp.metadata.deleted);
+    assert!(!read_resp.metadata.destroyed);
     assert_eq!(read_resp.metadata.min_version, 1);
     assert_eq!(read_resp.metadata.max_version, 2);
     assert_eq!(read_resp.metadata.version, 1);

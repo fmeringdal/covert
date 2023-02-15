@@ -44,11 +44,19 @@ impl TryFrom<MountEntryRaw> for MountEntry {
     }
 }
 
-pub struct MountStore {
+pub struct MountRepo {
     pool: Arc<EncryptedPool>,
 }
 
-impl MountStore {
+impl Clone for MountRepo {
+    fn clone(&self) -> Self {
+        Self {
+            pool: Arc::clone(&self.pool),
+        }
+    }
+}
+
+impl MountRepo {
     pub fn new(pool: Arc<EncryptedPool>) -> Self {
         Self { pool }
     }
@@ -138,20 +146,14 @@ impl MountStore {
 
 #[cfg(test)]
 pub mod tests {
-    use rust_embed::RustEmbed;
-
-    use crate::Core;
+    use crate::migrations::{migrate, Migrations};
 
     use super::*;
-
-    #[derive(RustEmbed)]
-    #[folder = "migrations/"]
-    struct Migrations;
 
     pub async fn pool() -> EncryptedPool {
         let pool = EncryptedPool::new_tmp();
 
-        Core::migrate::<Migrations>(&pool).await.unwrap();
+        migrate::<Migrations>(&pool).await.unwrap();
 
         pool
     }
@@ -159,7 +161,7 @@ pub mod tests {
     #[tokio::test]
     async fn crud() {
         let pool = pool().await;
-        let store = MountStore::new(Arc::new(pool));
+        let store = MountRepo::new(Arc::new(pool));
 
         let mut me = MountEntry {
             id: Uuid::new_v4(),

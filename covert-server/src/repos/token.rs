@@ -7,13 +7,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
-use super::policy_store::PolicyRaw;
+use super::policy::PolicyRaw;
 
-pub struct TokenStore {
+pub struct TokenRepo {
     pool: Arc<EncryptedPool>,
 }
 
-impl TokenStore {
+impl Clone for TokenRepo {
+    fn clone(&self) -> Self {
+        Self {
+            pool: Arc::clone(&self.pool),
+        }
+    }
+}
+
+impl TokenRepo {
     pub fn new(pool: Arc<EncryptedPool>) -> Self {
         Self { pool }
     }
@@ -103,51 +111,42 @@ impl TokenEntry {
     pub fn id(&self) -> &Token {
         &self.id
     }
-
-    pub fn expired(&self) -> bool {
-        match self.expires_at {
-            Some(valid_until) => Utc::now() < valid_until,
-            None => false,
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use covert_types::{entity::Entity, policy::PathPolicy, request::Operation};
 
-    use crate::store::{
-        identity_store::IdentityStore, mount_store::tests::pool, policy_store::PolicyStore,
-    };
+    use crate::repos::{entity::EntityRepo, mount::tests::pool, policy::PolicyRepo};
 
     use super::*;
 
     #[tokio::test]
     async fn crud() {
         let pool = Arc::new(pool().await);
-        let store = TokenStore::new(Arc::clone(&pool));
-        let policy_store = Arc::new(PolicyStore::new(Arc::clone(&pool)));
-        let identity_store = IdentityStore::new(Arc::clone(&pool));
+        let store = TokenRepo::new(Arc::clone(&pool));
+        let policy_repo = Arc::new(PolicyRepo::new(Arc::clone(&pool)));
+        let entity_repo = EntityRepo::new(Arc::clone(&pool));
 
         // Create entity "John" with policy "foo" and "bar"
         let foo_policy = Policy::new(
             "foo".into(),
             vec![PathPolicy::new("foo/".into(), vec![Operation::Read])],
         );
-        policy_store.create(&foo_policy).await.unwrap();
+        policy_repo.create(&foo_policy).await.unwrap();
         let bar_policy = Policy::new(
             "bar".into(),
             vec![PathPolicy::new("bar/".into(), vec![Operation::Update])],
         );
-        policy_store.create(&bar_policy).await.unwrap();
+        policy_repo.create(&bar_policy).await.unwrap();
 
         let entity = Entity::new("John".into(), false);
-        identity_store.create(&entity).await.unwrap();
-        identity_store
+        entity_repo.create(&entity).await.unwrap();
+        entity_repo
             .attach_policy(entity.name(), foo_policy.name())
             .await
             .unwrap();
-        identity_store
+        entity_repo
             .attach_policy(entity.name(), bar_policy.name())
             .await
             .unwrap();
@@ -172,29 +171,29 @@ mod tests {
     #[tokio::test]
     async fn no_policies_for_expired_token() {
         let pool = Arc::new(pool().await);
-        let store = TokenStore::new(Arc::clone(&pool));
-        let policy_store = Arc::new(PolicyStore::new(Arc::clone(&pool)));
-        let identity_store = IdentityStore::new(Arc::clone(&pool));
+        let store = TokenRepo::new(Arc::clone(&pool));
+        let policy_repo = Arc::new(PolicyRepo::new(Arc::clone(&pool)));
+        let entity_repo = EntityRepo::new(Arc::clone(&pool));
 
         // Create entity "John" with policy "foo" and "bar"
         let foo_policy = Policy::new(
             "foo".into(),
             vec![PathPolicy::new("foo/".into(), vec![Operation::Read])],
         );
-        policy_store.create(&foo_policy).await.unwrap();
+        policy_repo.create(&foo_policy).await.unwrap();
         let bar_policy = Policy::new(
             "bar".into(),
             vec![PathPolicy::new("bar/".into(), vec![Operation::Update])],
         );
-        policy_store.create(&bar_policy).await.unwrap();
+        policy_repo.create(&bar_policy).await.unwrap();
 
         let entity = Entity::new("John".into(), false);
-        identity_store.create(&entity).await.unwrap();
-        identity_store
+        entity_repo.create(&entity).await.unwrap();
+        entity_repo
             .attach_policy(entity.name(), foo_policy.name())
             .await
             .unwrap();
-        identity_store
+        entity_repo
             .attach_policy(entity.name(), bar_policy.name())
             .await
             .unwrap();

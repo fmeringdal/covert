@@ -8,7 +8,7 @@ use thiserror::Error;
 pub use http::StatusCode;
 use tracing_error::SpanTrace;
 
-use crate::state::VaultState;
+use crate::state::StorageState;
 
 /// A shares errod type used to produce public error and add additional context
 /// for internal diagnostics. A public error will be produced by using the inner
@@ -73,7 +73,7 @@ impl ApiError {
     }
 
     #[must_use]
-    pub fn invalid_state(current_state: VaultState) -> Self {
+    pub fn invalid_state(current_state: StorageState) -> Self {
         Self {
             error: anyhow::Error::msg(format!(
                 "This operation is not allowed when the current state is `{current_state}`"

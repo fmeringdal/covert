@@ -50,26 +50,22 @@ mod tests {
             .filename(":memory:");
         let mut conn = SqliteConnection::connect_with(&opts).await.unwrap();
 
-        sqlx::query(&format!(
-            "CREATE TABLE IF NOT EXISTS FOO_123_users ( id TEXT PRIMARY KEY )"
-        ))
-        .execute(&mut conn)
-        .await
-        .unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS FOO_123_users ( id TEXT PRIMARY KEY )")
+            .execute(&mut conn)
+            .await
+            .unwrap();
 
-        sqlx::query(&format!(
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS FOO_123_books ( id TEXT PRIMARY KEY, author TEXT REFERENCES FOO_123_users(id) )"
-        ))
+        )
         .execute(&mut conn)
         .await
         .unwrap();
 
-        sqlx::query(&format!(
-            "CREATE TABLE IF NOT EXISTS BAR_123_users ( id TEXT PRIMARY KEY )"
-        ))
-        .execute(&mut conn)
-        .await
-        .unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS BAR_123_users ( id TEXT PRIMARY KEY )")
+            .execute(&mut conn)
+            .await
+            .unwrap();
 
         let tables = get_resources_by_prefix(&mut conn, "foo").await.unwrap();
         assert_eq!(
