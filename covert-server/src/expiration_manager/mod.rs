@@ -16,8 +16,8 @@ use covert_types::ttl::calculate_ttl;
 use futures::stream::FuturesOrdered;
 use futures::{Future, StreamExt};
 use hyper::http;
-use tokio::sync::Notify;
 use tokio::sync::RwLock;
+use tokio::sync::{mpsc, Notify};
 use tokio::time::timeout;
 use tracing::{debug, error, info};
 use uuid::Uuid;
@@ -42,9 +42,9 @@ pub struct ExpirationManager {
     /// Mount storage
     mount_repo: MountRepo,
     /// Shutdown listener
-    shutdown_rx: Arc<RwLock<tokio::sync::mpsc::Receiver<()>>>,
+    shutdown_rx: Arc<RwLock<mpsc::Receiver<()>>>,
     /// Shutdown transmitter
-    shutdown_tx: tokio::sync::mpsc::Sender<()>,
+    shutdown_tx: mpsc::Sender<()>,
     /// Time before retrying a failed revocation
     revocation_retry_timeout: Duration,
     /// Max number of revoke requests before the lease is deleted
@@ -65,7 +65,7 @@ impl ExpirationManager {
         mount_repo: MountRepo,
         clock: impl Clock,
     ) -> Self {
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let (tx, rx) = mpsc::channel(1);
 
         ExpirationManager {
             background_task: Notify::new(),
@@ -316,6 +316,7 @@ impl ExpirationManager {
             };
 
             let number_of_leases = leases.len();
+            debug!("Fetched {} leases ready for revocation", number_of_leases);
             if number_of_leases == 0 {
                 // TODO: this might need more care to ensure no leases are lost
                 let next_lease_fut = self
@@ -345,7 +346,6 @@ impl ExpirationManager {
                         }
                 }
             }
-            debug!("Fetched {} leases ready for revocation", number_of_leases);
 
             futures::stream::iter(leases)
                 .for_each_concurrent(self.revocation_worker_concurrency, |le| async move {
@@ -373,7 +373,7 @@ impl ExpirationManager {
                         // **NOTE**: This means that revoke endpoints should be idempotent as
                         // this will trigger a new revoke request to be sent even though
                         // the lease was just revoked from the backend
-                        tracing::error!(?error, "Failed to delete lease from the lease store");
+                        error!(?error, "Failed to delete lease from the lease store");
                         error
                     })
                     .map(|_| ())
@@ -422,7 +422,6 @@ mod tests {
         mount::{MountConfig, MountEntry},
         response::Response,
     };
-    use tokio::time::sleep;
 
     use crate::{
         expiration_manager::clock::test::TestClock, repos::mount::tests::pool, router::RouteEntry,
@@ -568,7 +567,7 @@ mod tests {
         tokio::spawn(async move {
             expiration_manager.start().await.unwrap();
         });
-        sleep(std::time::Duration::ZERO).await;
+        tokio::task::yield_now().await;
 
         // Setup mount
         let me = MountEntry {
@@ -661,7 +660,7 @@ mod tests {
         tokio::spawn(async move {
             expiration_manager.start().await.unwrap();
         });
-        tokio::time::sleep(std::time::Duration::ZERO).await;
+        tokio::task::yield_now().await;
 
         // Setup system mount
         let me = MountEntry {
@@ -743,7 +742,7 @@ mod tests {
         tokio::spawn(async move {
             expiration_manager.start().await.unwrap();
         });
-        tokio::time::sleep(std::time::Duration::ZERO).await;
+        tokio::task::yield_now().await;
 
         // Setup system mount
         let me = MountEntry {
@@ -824,7 +823,7 @@ mod tests {
         tokio::spawn(async move {
             expiration_manager.start().await.unwrap();
         });
-        tokio::time::sleep(std::time::Duration::ZERO).await;
+        tokio::task::yield_now().await;
 
         // Setup system mount
         let mount_config = MountConfig {
@@ -955,7 +954,7 @@ mod tests {
         tokio::spawn(async move {
             expiration_manager.start().await.unwrap();
         });
-        tokio::time::sleep(std::time::Duration::ZERO).await;
+        tokio::task::yield_now().await;
 
         // Setup system mount
         let me = MountEntry {
@@ -1039,7 +1038,7 @@ mod tests {
         tokio::spawn(async move {
             expiration_manager.start().await.unwrap();
         });
-        tokio::time::sleep(std::time::Duration::ZERO).await;
+        tokio::task::yield_now().await;
 
         // Setup system mount
         let me = MountEntry {
@@ -1139,7 +1138,7 @@ mod tests {
         tokio::spawn(async move {
             expiration_manager.start().await.unwrap();
         });
-        tokio::time::sleep(std::time::Duration::ZERO).await;
+        tokio::task::yield_now().await;
 
         // Setup system mount
         let me = MountEntry {
