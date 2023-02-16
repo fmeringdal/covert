@@ -28,14 +28,13 @@ use crate::{
     ExpirationManager, Router,
 };
 
-use super::{new_system_backend, unseal::UnsealProgress};
+use super::new_system_backend;
 
-#[tracing::instrument(skip(repos, expiration_manager, router, unseal_progress))]
+#[tracing::instrument(skip(repos, expiration_manager, router))]
 pub async fn handle_mount(
     Extension(repos): Extension<Repos>,
     Extension(router): Extension<Arc<Router>>,
     Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
-    Extension(unseal_progress): Extension<UnsealProgress>,
     Path(path): Path<String>,
     Json(body): Json<CreateMountParams>,
 ) -> Result<Response, Error> {
@@ -43,7 +42,6 @@ pub async fn handle_mount(
         &repos,
         expiration_manager,
         router,
-        unseal_progress,
         path.clone(),
         body.variant,
         body.config.clone(),
@@ -193,13 +191,11 @@ pub async fn remove_mount(
     Ok(me)
 }
 
-#[allow(clippy::too_many_arguments)]
 #[tracing::instrument(skip_all)]
 pub async fn mount_route_entry(
     repos: &Repos,
     expiration_manager: Arc<ExpirationManager>,
     router: Arc<Router>,
-    unseal_progress: UnsealProgress,
     path: String,
     id: Uuid,
     variant: BackendType,
@@ -212,7 +208,6 @@ pub async fn mount_route_entry(
         new_backend(
             repos,
             Arc::clone(&router),
-            unseal_progress,
             expiration_manager,
             backend_storage,
             variant,
@@ -229,7 +224,6 @@ pub async fn mount_route_entry(
 async fn new_backend(
     repos: &Repos,
     router: Arc<Router>,
-    unseal_progress: UnsealProgress,
     expiration_manager: Arc<ExpirationManager>,
     storage: BackendStoragePool,
     variant: BackendType,
@@ -241,20 +235,17 @@ async fn new_backend(
             repos.clone(),
             router,
             expiration_manager,
-            unseal_progress,
         )),
         BackendType::Userpass => new_userpass_backend(storage),
     }
 }
 
 /// Mount a new backend
-#[allow(clippy::too_many_arguments)]
-#[tracing::instrument(skip(repos, expiration_manager, router, unseal_progress))]
+#[tracing::instrument(skip(repos, expiration_manager, router))]
 pub async fn mount(
     repos: &Repos,
     expiration_manager: Arc<ExpirationManager>,
     router: Arc<Router>,
-    unseal_progress: UnsealProgress,
     path: String,
     variant: BackendType,
     config: MountConfig,
@@ -266,7 +257,6 @@ pub async fn mount(
         repos,
         expiration_manager,
         router,
-        unseal_progress,
         path.clone(),
         uuid,
         variant,
