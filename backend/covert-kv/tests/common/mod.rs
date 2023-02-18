@@ -18,7 +18,7 @@ pub async fn setup() -> Client {
     };
 
     tokio::spawn(async move {
-        if let Err(err) = covert_system::start(config).await {
+        if let Err(err) = covert_system::start(config, covert_system::shutdown_signal()).await {
             panic!("server error: {}", err);
         }
     });
