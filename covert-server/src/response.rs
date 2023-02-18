@@ -1,7 +1,6 @@
 use covert_types::{error::ApiError, mount::MountConfig, response::Response};
 use hyper::{header::CONTENT_TYPE, Body, StatusCode};
 use serde::Serialize;
-use uuid::Uuid;
 
 use crate::error::{Error, ErrorType};
 
@@ -9,7 +8,6 @@ use crate::error::{Error, ErrorType};
 pub struct ResponseContext {
     pub backend_mount_path: String,
     pub backend_config: MountConfig,
-    pub backend_id: Uuid,
 }
 
 #[derive(Debug, Serialize)]

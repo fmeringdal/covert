@@ -68,7 +68,6 @@ impl Router {
             let ctx = ResponseContext {
                 backend_config: re.config_cloned(),
                 backend_mount_path: mount,
-                backend_id: re.id,
             };
             ResponseWithCtx { response, ctx }
         })

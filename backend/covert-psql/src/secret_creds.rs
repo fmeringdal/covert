@@ -41,7 +41,6 @@ pub async fn secret_creds_revoke(
     Ok(Response::ok())
 }
 
-// TODO: this is never used yet
 #[tracing::instrument(skip(b))]
 pub async fn secret_creds_renew(
     Extension(b): Extension<Arc<Context>>,
@@ -61,8 +60,6 @@ pub async fn secret_creds_renew(
     let ttl = chrono::Duration::from_std(body.ttl)
         .map_err(|_| ErrorType::InternalError(anyhow::Error::msg("Unable to create TTL")))?;
     let expiration = Utc::now() + ttl;
-    // TODO: correct format
-    // 	Format("2006-01-02 15:04:05-0700")
     let expiration = expiration.format("%Y-%m-%d %H:%M:%S").to_string();
 
     // Get our connection

@@ -56,8 +56,6 @@ pub async fn generate_role_credentials(
 
     let expiration = now + ttl;
 
-    // TODO: correct format
-    // 	Format("2006-01-02 15:04:05-0700")
     let expiration = expiration.format("%Y-%m-%d %H:%M:%S").to_string();
 
     // Get our handle
