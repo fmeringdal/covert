@@ -7,13 +7,14 @@ use tokio::sync::oneshot;
 
 pub const MOUNT_PATH: &str = "database/";
 
-pub async fn setup(storage: &str) -> Client {
-    let (port_tx, mut port_rx) = oneshot::channel();
+pub async fn setup(storage: &str, seal_storage_path: &str) -> Client {
+    let (port_tx, port_rx) = oneshot::channel();
 
     let config = covert_system::Config {
         port: 0,
         port_tx: Some(port_tx),
         storage_path: storage.into(),
+        seal_storage_path: seal_storage_path.into(),
     };
 
     tokio::spawn(async move {
@@ -21,16 +22,16 @@ pub async fn setup(storage: &str) -> Client {
             panic!("server error: {}", err);
         }
     });
-    tokio::task::yield_now().await;
 
-    let port = port_rx.try_recv().unwrap();
+    let port = port_rx.await.unwrap();
+
     let sdk = Client::new(format!("http://localhost:{port}/v1"));
 
     sdk
 }
 
 pub async fn setup_unseal() -> Client {
-    let sdk = setup(":memory:").await;
+    let sdk = setup(":memory:", ":memory:").await;
     let shares = match sdk
         .operator
         .initialize(&InitializeParams {

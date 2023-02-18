@@ -41,7 +41,6 @@ use self::{
 };
 pub use mount::mount;
 pub use token::RevokeTokenParams;
-pub use unseal::UnsealProgress;
 
 pub const SYSTEM_MOUNT_PATH: &str = "sys/";
 
@@ -49,7 +48,6 @@ pub fn new_system_backend(
     repos: Repos,
     router: Arc<crate::Router>,
     expiration_manager: Arc<ExpirationManager>,
-    unseal_progress: UnsealProgress,
 ) -> Backend {
     let router = Router::new()
         .route(
@@ -148,7 +146,6 @@ pub fn new_system_backend(
         .layer(Extension(expiration_manager))
         .layer(Extension(router))
         .layer(Extension(repos))
-        .layer(Extension(unseal_progress))
         .build()
         .into_service();
 

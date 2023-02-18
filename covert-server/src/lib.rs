@@ -21,6 +21,7 @@ use covert_storage::EncryptedPool;
 use covert_types::{backend::BackendType, mount::MountConfig};
 pub use expiration_manager::{ExpirationManager, LeaseEntry};
 pub use router::{Router, RouterService};
+use sqlx::sqlite::SqliteConnectOptions;
 use tokio::sync::oneshot;
 use tower::{make::Shared, ServiceBuilder};
 use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer};
@@ -33,11 +34,12 @@ use crate::{
         lease_registration::LeaseRegistrationLayer, request_mapper::LogicalRequestResponseLayer,
     },
     repos::Repos,
-    system::{UnsealProgress, SYSTEM_MOUNT_PATH},
+    system::SYSTEM_MOUNT_PATH,
 };
 
 pub struct Config {
     pub storage_path: String,
+    pub seal_storage_path: String,
     pub port: u16,
     pub port_tx: Option<oneshot::Sender<u16>>,
 }
@@ -53,7 +55,21 @@ async fn shutdown_signal() {
 pub async fn start(config: Config) -> Result<(), anyhow::Error> {
     let router = Arc::new(Router::new());
     let encrypted_pool = Arc::new(EncryptedPool::new(&config.storage_path));
-    let repos = Repos::new(encrypted_pool);
+
+    let connect_opts = SqliteConnectOptions::new()
+        .create_if_missing(true)
+        .foreign_keys(true)
+        .filename(&config.seal_storage_path);
+
+    let unecrypted_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .min_connections(1)
+        .max_connections(1)
+        .connect_with(connect_opts)
+        .await?;
+    let repos = Repos::new(encrypted_pool, unecrypted_pool);
+
+    // Run migration
+    crate::migrations::migrate_unecrypted_db(&repos.unecrypted_pool).await?;
 
     let expiration = Arc::new(ExpirationManager::new(
         Arc::clone(&router),
@@ -63,12 +79,10 @@ pub async fn start(config: Config) -> Result<(), anyhow::Error> {
     ));
 
     // Mount system backend
-    let unseal_progress = UnsealProgress::new();
     crate::system::mount(
         &repos,
         Arc::clone(&expiration),
         Arc::clone(&router),
-        unseal_progress,
         SYSTEM_MOUNT_PATH.to_string(),
         BackendType::System,
         MountConfig::default(),

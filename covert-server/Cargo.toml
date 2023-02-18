@@ -9,6 +9,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+aes-gcm = "0.10"
 bytes = { version = "1.1", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 covert-framework = { path = "../covert-framework", version = "0.1.1" }

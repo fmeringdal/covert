@@ -146,14 +146,12 @@ impl MountRepo {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::migrations::{migrate, Migrations};
-
     use super::*;
 
     pub async fn pool() -> EncryptedPool {
         let pool = EncryptedPool::new_tmp();
 
-        migrate::<Migrations>(&pool).await.unwrap();
+        crate::migrations::migrate_ecrypted_db(&pool).await.unwrap();
 
         pool
     }

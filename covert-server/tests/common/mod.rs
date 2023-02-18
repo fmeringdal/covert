@@ -5,12 +5,13 @@ use covert_sdk::{
 use tokio::sync::oneshot;
 
 pub async fn setup() -> Client {
-    let (port_tx, mut port_rx) = oneshot::channel();
+    let (port_tx, port_rx) = oneshot::channel();
 
     let config = covert_system::Config {
         port: 0,
         port_tx: Some(port_tx),
         storage_path: ":memory:".into(),
+        seal_storage_path: ":memory:".into(),
     };
 
     tokio::spawn(async move {
@@ -18,9 +19,8 @@ pub async fn setup() -> Client {
             panic!("server error: {}", err);
         }
     });
-    tokio::task::yield_now().await;
 
-    let port = port_rx.try_recv().unwrap();
+    let port = port_rx.await.unwrap();
     let sdk = Client::new(format!("http://localhost:{port}/v1"));
 
     sdk
