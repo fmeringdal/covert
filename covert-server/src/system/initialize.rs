@@ -8,15 +8,12 @@ use covert_types::{
 
 use crate::{
     error::{Error, ErrorType},
-    repos::Repos,
+    repos::{seal::SealConfig, Repos},
 };
-
-use super::UnsealProgress;
 
 #[allow(clippy::unused_async)]
 pub async fn handle_initialize(
     Extension(repos): Extension<Repos>,
-    Extension(unseal_progress): Extension<UnsealProgress>,
     Json(body): Json<InitializeParams>,
 ) -> Result<Response, Error> {
     // Sanity check params before making real master key
@@ -24,8 +21,13 @@ pub async fn handle_initialize(
         return Err(ErrorType::InvalidInitializeParams.into());
     }
 
-    unseal_progress.set_threshold(body.threshold);
-    unseal_progress.set_shares_count(body.shares);
+    repos
+        .seal
+        .set_config(&SealConfig {
+            shares: body.shares,
+            threshold: body.threshold,
+        })
+        .await?;
 
     if let Some(master_key) = repos.pool.initialize()? {
         let sharks = sharks::Sharks(body.threshold);

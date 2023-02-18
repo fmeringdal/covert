@@ -1,10 +1,4 @@
-use std::{
-    collections::HashSet,
-    sync::{
-        atomic::{AtomicU8, Ordering},
-        Arc,
-    },
-};
+use std::sync::Arc;
 
 use covert_framework::extract::{Extension, Json};
 use covert_types::{
@@ -14,111 +8,60 @@ use covert_types::{
     response::Response,
     token::Token,
 };
-use parking_lot::RwLock;
 
 use crate::{
     error::{Error, ErrorType},
-    migrations::{migrate, Migrations},
     repos::{token::TokenEntry, Repos},
     ExpirationManager, Router,
 };
 
 use super::mount::mount_route_entry;
 
-pub struct UnsealProgress {
-    pub provided_shares: Arc<RwLock<HashSet<String>>>,
-    pub threshold: Arc<AtomicU8>,
-    pub shares_count: Arc<AtomicU8>,
-}
-
-impl UnsealProgress {
-    pub fn new() -> Self {
-        Self {
-            provided_shares: Arc::new(RwLock::new(HashSet::new())),
-            threshold: Arc::new(AtomicU8::new(0)),
-            shares_count: Arc::new(AtomicU8::new(0)),
-        }
-    }
-
-    pub fn set_threshold(&self, threshold: u8) {
-        self.threshold.store(threshold, Ordering::SeqCst);
-    }
-
-    pub fn threshold(&self) -> u8 {
-        self.threshold.load(Ordering::SeqCst)
-    }
-
-    pub fn set_shares_count(&self, threshold: u8) {
-        self.shares_count.store(threshold, Ordering::SeqCst);
-    }
-
-    pub fn shares_count(&self) -> u8 {
-        self.shares_count.load(Ordering::SeqCst)
-    }
-
-    pub fn provide_shares(&self, shares: &[String]) {
-        let mut keys = self.provided_shares.write();
-        for share in shares {
-            keys.insert(share.clone());
-        }
-    }
-
-    pub fn shares(&self) -> HashSet<String> {
-        let keys = self.provided_shares.read();
-        keys.clone()
-    }
-
-    pub fn clear_shares(&self) {
-        let mut keys = self.provided_shares.write();
-        keys.drain();
-    }
-}
-
-impl Clone for UnsealProgress {
-    fn clone(&self) -> Self {
-        Self {
-            provided_shares: Arc::clone(&self.provided_shares),
-            threshold: Arc::clone(&self.threshold),
-            shares_count: Arc::clone(&self.shares_count),
-        }
-    }
-}
-
 pub async fn handle_unseal(
     Extension(repos): Extension<Repos>,
     Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
     Extension(router): Extension<Arc<Router>>,
-    Extension(unseal_progress): Extension<UnsealProgress>,
     Json(body): Json<UnsealParams>,
 ) -> Result<Response, Error> {
-    let threshold = unseal_progress.threshold();
-    unseal_progress.provide_shares(&body.shares);
-    let shares = unseal_progress.shares();
+    let seal_config = repos.seal.get_config().await?.ok_or_else(|| {
+        ErrorType::InternalError(anyhow::Error::msg(
+            "Seal config was not found when unseal handler was called",
+        ))
+    })?;
 
-    if usize::from(threshold) > shares.len() {
+    for key in body.shares {
+        repos.seal.insert_key_share(key.as_bytes()).await?;
+    }
+
+    let Ok(shares) = repos
+        .seal
+        .get_key_shares()
+        .await?
+        .into_iter()
+        .map(|k| String::from_utf8(k.key))
+        .collect::<Result<Vec<_>, _>>() else {
+            repos.seal.clear_key_shares().await?;
+            return Err(ErrorType::BadData("Invalid share key found".into()).into());
+        };
+
+    if usize::from(seal_config.threshold) > shares.len() {
         // Return progress
         let resp = UnsealResponse::InProgress {
-            threshold,
-            key_shares_total: unseal_progress.shares_count(),
+            threshold: seal_config.threshold,
+            key_shares_total: seal_config.shares,
             key_shares_provided: shares.len(),
         };
         return Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into());
     }
 
-    let master_key = construct_master_key(&shares, threshold).map_err(|err| {
-        unseal_progress.clear_shares();
-        err
-    })?;
-    unseal_progress.clear_shares();
+    let Ok(master_key) = construct_master_key(&shares, seal_config.threshold) else {
+        repos.seal.clear_key_shares().await?;
+        return Err(ErrorType::BadData("Unable to construct master key from key shares".into()).into());
+    };
+    // No longer needed so just clear them
+    repos.seal.clear_key_shares().await?;
 
-    unseal(
-        &repos,
-        expiration_manager,
-        router,
-        unseal_progress,
-        master_key,
-    )
-    .await?;
+    unseal(&repos, expiration_manager, router, master_key).await?;
 
     let root_token = generate_root_token(&repos).await?;
 
@@ -126,7 +69,7 @@ pub async fn handle_unseal(
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-fn construct_master_key(key_shares: &HashSet<String>, threshold: u8) -> Result<String, Error> {
+fn construct_master_key(key_shares: &[String], threshold: u8) -> Result<String, Error> {
     let key_shares = key_shares
         .iter()
         .map(|s| {
@@ -150,13 +93,12 @@ async fn unseal(
     repos: &Repos,
     expiration_manager: Arc<ExpirationManager>,
     router: Arc<Router>,
-    unseal_progress: UnsealProgress,
     master_key: String,
 ) -> Result<(), Error> {
     repos.pool.unseal(master_key)?;
 
     // Run migrations
-    migrate::<Migrations>(repos.pool.as_ref()).await?;
+    crate::migrations::migrate_ecrypted_db(repos.pool.as_ref()).await?;
 
     let mounts = repos.mount.list().await?;
     if mounts.is_empty() {
@@ -168,7 +110,6 @@ async fn unseal(
             repos,
             Arc::clone(&expiration_manager),
             Arc::clone(&router),
-            unseal_progress.clone(),
             mount.path,
             mount.id,
             mount.backend_type,

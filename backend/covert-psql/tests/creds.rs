@@ -110,14 +110,22 @@ async fn generate_credentials() {
 #[cfg_attr(not(feature = "psql-integration-test"), ignore)]
 async fn restore_connnection_after_seal() {
     let tmpdir = tempfile::tempdir().unwrap();
+    let seal_tmpdir = tempfile::tempdir().unwrap();
     let storage_path = tmpdir
         .path()
         .join("db-storage")
         .to_str()
         .unwrap()
         .to_string();
+    let seal_storage_path = seal_tmpdir
+        .path()
+        .join("seal-storage")
+        .to_str()
+        .unwrap()
+        .to_string();
 
-    let sdk = setup(&storage_path).await;
+    let sdk = setup(&storage_path, &seal_storage_path).await;
+
     let shares = match sdk
         .operator
         .initialize(&InitializeParams {

@@ -13,15 +13,12 @@ use crate::{
     ExpirationManager, Router,
 };
 
-use super::unseal::UnsealProgress;
-
 pub async fn handle_seal(
     Extension(repos): Extension<Repos>,
-    Extension(unseal_progress): Extension<UnsealProgress>,
     Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
     Extension(router): Extension<Arc<Router>>,
 ) -> Result<Response, Error> {
-    seal(&repos, expiration_manager, router, unseal_progress).await?;
+    seal(&repos, expiration_manager, router).await?;
 
     let resp = SealResponse {
         message: "Successfully sealed".into(),
@@ -34,7 +31,6 @@ async fn seal(
     repos: &Repos,
     expiration_manager: Arc<ExpirationManager>,
     router: Arc<Router>,
-    unseal_progress: UnsealProgress,
 ) -> Result<(), Error> {
     info!("Sealing the core");
     repos.pool.seal()?;
@@ -45,15 +41,11 @@ async fn seal(
     // Clear all the route entries except system
     router.clear_mounts().await;
 
-    // This should already be cleared, but just to be safe
-    unseal_progress.clear_shares();
-
     let config = MountConfig::default();
     super::mount::mount(
         repos,
         expiration_manager,
         router,
-        unseal_progress,
         SYSTEM_MOUNT_PATH.to_string(),
         BackendType::System,
         config.clone(),
