@@ -19,26 +19,26 @@ pub struct Entity {
 pub enum EntitySubcommand {
     #[command(about = "add new entity")]
     Add {
-        #[arg(help = "name of entity")]
+        #[arg(short, long, help = "name of entity")]
         name: String,
     },
     #[command(about = "attach policy to entity")]
     AttachPolicy {
-        #[arg(help = "name of entity")]
+        #[arg(short, long, help = "name of entity")]
         name: String,
         #[arg(short, long, use_value_delimiter = true, value_delimiter = ',')]
         policies: Vec<String>,
     },
     #[command(about = "remove policy from entity")]
     RemovePolicy {
-        #[arg(help = "name of entity")]
+        #[arg(short, long, help = "name of entity")]
         name: String,
         #[arg(short, long)]
         policy: String,
     },
     #[command(about = "attach alias to entity")]
     AttachAlias {
-        #[arg(help = "name of entity")]
+        #[arg(short, long, help = "name of entity")]
         name: String,
         #[arg(short, long)]
         alias: String,
@@ -47,7 +47,7 @@ pub enum EntitySubcommand {
     },
     #[command(about = "remove alias from entity")]
     RemoveAlias {
-        #[arg(help = "name of entity")]
+        #[arg(short, long, help = "name of entity")]
         name: String,
         #[arg(short, long)]
         alias: String,

@@ -24,6 +24,7 @@ pub struct Client {
     pub psql: crate::psql::Client,
     pub userpass: crate::userpass::Client,
     pub lease: crate::lease::Client,
+    base: Arc<BaseClient>,
 }
 
 impl Client {
@@ -50,6 +51,11 @@ impl Client {
             psql,
             userpass,
             lease,
+            base: base_client,
         }
+    }
+
+    pub async fn set_token(&self, token: Option<String>) {
+        self.base.set_token(token).await
     }
 }

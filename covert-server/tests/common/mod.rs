@@ -1,5 +1,5 @@
 use covert_sdk::{
-    operator::{InitializeParams, InitializeResponse, UnsealParams},
+    operator::{InitializeParams, InitializeResponse, UnsealParams, UnsealResponse},
     Client,
 };
 use tokio::sync::oneshot;
@@ -47,6 +47,10 @@ pub async fn setup_unseal() -> Client {
         InitializeResponse::NewKeyShares(shares) => shares.shares,
         _ => panic!("should get new shares"),
     };
-    sdk.operator.unseal(&UnsealParams { shares }).await.unwrap();
+    let resp = sdk.operator.unseal(&UnsealParams { shares }).await.unwrap();
+    if let UnsealResponse::Complete { root_token } = resp {
+        sdk.set_token(Some(root_token.to_string())).await;
+    }
+
     sdk
 }

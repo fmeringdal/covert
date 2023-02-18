@@ -13,7 +13,7 @@ pub struct Policy {
 pub enum PolicySubcommands {
     #[command(about = "add new policy")]
     Add {
-        #[arg(help = "name of policy to create")]
+        #[arg(short, long, help = "name of policy to create")]
         name: String,
         #[arg(long)]
         policy: String,

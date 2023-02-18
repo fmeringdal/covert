@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 use covert_sdk::{
-    userpass::{CreateUserParams, UpdateUserPasswordParams},
+    userpass::{CreateUserParams, LoginParams, UpdateUserPasswordParams},
     Client,
 };
 
@@ -16,16 +16,16 @@ pub struct Userpass {
 pub enum UserpassSubcommand {
     #[command(about = "add user")]
     Add {
-        #[arg(help = "username of user to create")]
+        #[arg(short, long)]
         username: String,
         #[arg(short, long)]
         password: String,
-        #[arg(short, long)]
+        #[arg(long)]
         path: String,
     },
     #[command(about = "remove user")]
     Remove {
-        #[arg(help = "username of user to remove")]
+        #[arg(short, long)]
         username: String,
         #[arg(short, long)]
         path: String,
@@ -35,15 +35,24 @@ pub enum UserpassSubcommand {
         #[arg(help = "path of the userpass auth method")]
         path: String,
     },
+    #[command(about = "login")]
+    Login {
+        #[arg(short, long)]
+        username: String,
+        #[arg(short, long)]
+        password: String,
+        #[arg(long)]
+        path: String,
+    },
     #[command(about = "update password for user")]
     UpdatePassword {
-        #[arg(help = "username of user to update password for")]
+        #[arg(short, long)]
         username: String,
         #[arg(short, long)]
         password: String,
         #[arg(long)]
         new_password: String,
-        #[arg(short, long)]
+        #[arg(long)]
         path: String,
     },
 }
@@ -64,6 +73,17 @@ impl Userpass {
             }
             UserpassSubcommand::List { path } => {
                 let resp = sdk.userpass.list(&path).await;
+                handle_resp(resp);
+            }
+            UserpassSubcommand::Login {
+                path,
+                username,
+                password,
+            } => {
+                let resp = sdk
+                    .userpass
+                    .login(&path, &LoginParams { username, password })
+                    .await;
                 handle_resp(resp);
             }
             UserpassSubcommand::Remove { path, username } => {

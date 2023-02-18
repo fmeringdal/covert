@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use covert_sdk::{
     mounts::{BackendType, CreateMountParams, MountConfig},
-    operator::{InitializeParams, InitializeResponse, UnsealParams},
+    operator::{InitializeParams, InitializeResponse, UnsealParams, UnsealResponse},
     psql::{CreateRoleParams, SetConnectionParams},
     Client,
 };
@@ -138,12 +138,16 @@ async fn restore_connnection_after_seal() {
         InitializeResponse::NewKeyShares(shares) => shares.shares,
         _ => panic!("should get new shares"),
     };
-    sdk.operator
+    let resp = sdk
+        .operator
         .unseal(&UnsealParams {
             shares: shares.clone(),
         })
         .await
         .unwrap();
+    if let UnsealResponse::Complete { root_token } = resp {
+        sdk.set_token(Some(root_token.to_string())).await;
+    }
 
     // Setup mount
     sdk.mount

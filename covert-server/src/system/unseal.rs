@@ -4,7 +4,8 @@ use covert_framework::extract::{Extension, Json};
 use covert_types::{
     entity::Entity,
     methods::system::{UnsealParams, UnsealResponse},
-    policy::Policy,
+    policy::{PathPolicy, Policy},
+    request::Operation,
     response::Response,
     token::Token,
 };
@@ -130,16 +131,32 @@ async fn unseal(
 
 pub async fn generate_root_token(repos: &Repos) -> Result<Token, Error> {
     // Generate root policy if not exist
-    let policy = Policy::new("root".into(), vec![]);
+    let policy = Policy::new(
+        "root".into(),
+        vec![PathPolicy {
+            path: "/".to_string(),
+            operations: vec![
+                Operation::Read,
+                Operation::Delete,
+                Operation::Create,
+                Operation::Update,
+            ],
+        }],
+    );
     let _res = repos.policy.create(&policy).await;
 
     // Generate root entity if not exist
     let entity = Entity::new("root".into(), false);
     let _res = repos.entity.create(&entity).await;
 
+    // Attach root policy to root entity
+    let _res = repos.entity.attach_policy(&entity.name, &policy.name).await;
+
     let te = TokenEntry::new_root();
     let token = te.id().clone();
     repos.token.create(&te).await?;
+
+    let _res = repos.token.lookup_policies(&token).await;
 
     Ok(token)
 }
