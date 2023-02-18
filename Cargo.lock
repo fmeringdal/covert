@@ -440,6 +440,7 @@ dependencies = [
  "sqlx",
  "strum",
  "subtle",
+ "tempfile",
  "thiserror",
  "tokio",
  "tower",

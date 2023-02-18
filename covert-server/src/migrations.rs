@@ -12,6 +12,7 @@ pub(crate) struct Migrations;
 #[folder = "migrations/unecrypted/"]
 pub(crate) struct UnecryptedDbMigrations;
 
+// TODO: this needs to be improved to keep track of migrations metadata
 async fn migrate<'e, 'c, M, E>(executor: E) -> Result<(), Error>
 where
     M: RustEmbed,

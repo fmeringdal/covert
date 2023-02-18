@@ -54,6 +54,8 @@ impl Server {
             port_tx: None,
         };
 
-        covert_system::start(config).await.unwrap()
+        covert_system::start(config, covert_system::shutdown_signal())
+            .await
+            .unwrap()
     }
 }

@@ -49,3 +49,4 @@ uuid = { version = "0.8", features = ["serde", "v4"] }
 
 [dev-dependencies]    
 covert-sdk = { path = "../covert-sdk", version = "0.1.1" }
+tempfile = "3.3"

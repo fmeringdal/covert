@@ -15,7 +15,7 @@ mod response;
 mod router;
 mod system;
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use covert_storage::EncryptedPool;
 use covert_types::{backend::BackendType, mount::MountConfig};
@@ -44,7 +44,7 @@ pub struct Config {
     pub port_tx: Option<oneshot::Sender<u16>>,
 }
 
-async fn shutdown_signal() {
+pub async fn shutdown_signal() {
     // Wait for the CTRL+C signal
     tokio::signal::ctrl_c()
         .await
@@ -52,7 +52,10 @@ async fn shutdown_signal() {
     info!("Shutdown signal received");
 }
 
-pub async fn start(config: Config) -> Result<(), anyhow::Error> {
+pub async fn start(
+    config: Config,
+    shutdown_signal: impl Future<Output = ()>,
+) -> Result<(), anyhow::Error> {
     let router = Arc::new(Router::new());
     let encrypted_pool = Arc::new(EncryptedPool::new(&config.storage_path));
 
@@ -108,7 +111,7 @@ pub async fn start(config: Config) -> Result<(), anyhow::Error> {
     let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
     let covert_server = hyper::Server::bind(&addr).serve(Shared::new(server_router_svc));
     let addr = covert_server.local_addr();
-    let covert_server = covert_server.with_graceful_shutdown(shutdown_signal());
+    let covert_server = covert_server.with_graceful_shutdown(shutdown_signal);
 
     info!("listening on {addr}");
     if let Some(tx) = config.port_tx {
