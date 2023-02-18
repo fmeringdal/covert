@@ -1,8 +1,16 @@
+use chrono::Utc;
 use covert_framework::extract::{Extension, Json};
-use covert_types::{response::Response, token::Token};
+use covert_types::{
+    methods::{psql::RenewLeaseResponse, RenewLeaseParams},
+    response::Response,
+    token::Token,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::{error::Error, repos::Repos};
+use crate::{
+    error::{Error, ErrorType},
+    repos::Repos,
+};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RevokeTokenParams {
@@ -16,4 +24,30 @@ pub async fn handle_token_revocation(
 ) -> Result<Response, Error> {
     repos.token.remove(&body.token).await?;
     Ok(Response::ok())
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RenewTokenParams {
+    pub token: Token,
+}
+
+#[tracing::instrument(skip_all)]
+pub async fn handle_token_renewal(
+    Extension(repos): Extension<Repos>,
+    Json(body): Json<RenewLeaseParams<String>>,
+) -> Result<Response, Error> {
+    let data: RenewTokenParams = serde_json::from_str(&body.data).map_err(|_| {
+        ErrorType::InternalError(anyhow::Error::msg(
+            "Token renew request failed to deserialize",
+        ))
+    })?;
+
+    let ttl = chrono::Duration::from_std(body.ttl)
+        .map_err(|_| ErrorType::InternalError(anyhow::Error::msg("Unable to create TTL")))?;
+    let expires_at = Utc::now() + ttl;
+
+    repos.token.renew(&data.token, expires_at).await?;
+
+    let resp = RenewLeaseResponse { ttl: body.ttl };
+    Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }

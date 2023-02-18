@@ -74,6 +74,21 @@ impl TokenRepo {
             .map_err(Into::into)
             .map(|res| res.rows_affected() == 1)
     }
+
+    #[tracing::instrument(skip_all)]
+    pub async fn renew(&self, id: &Token, expires_at: DateTime<Utc>) -> Result<bool, Error> {
+        sqlx::query(
+            "UPDATE TOKENS SET
+            expires_at = ?
+            WHERE token = ?",
+        )
+        .bind(expires_at)
+        .bind(id.to_string())
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(Into::into)
+        .map(|res| res.rows_affected() == 1)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]

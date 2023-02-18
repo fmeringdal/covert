@@ -27,7 +27,7 @@ pub enum UserpassSubcommand {
     Remove {
         #[arg(short, long)]
         username: String,
-        #[arg(short, long)]
+        #[arg(long)]
         path: String,
     },
     #[command(about = "list users")]
