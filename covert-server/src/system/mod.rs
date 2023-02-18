@@ -11,8 +11,8 @@ mod unseal;
 use std::sync::Arc;
 
 use covert_framework::{
-    create, create_with_config, delete, extract::Extension, read, read_with_config, revoke, update,
-    Backend, RouteConfig, Router,
+    create, create_with_config, delete, extract::Extension, read, read_with_config, renew, revoke,
+    update, Backend, RouteConfig, Router,
 };
 use covert_types::{
     auth::AuthPolicy,
@@ -36,7 +36,7 @@ use self::{
     policy::{handle_create_policy, handle_delete_policy, handle_list_policies},
     seal::handle_seal,
     status::handle_status,
-    token::handle_token_revocation,
+    token::{handle_token_renewal, handle_token_revocation},
     unseal::handle_unseal,
 };
 pub use mount::mount;
@@ -130,6 +130,7 @@ pub fn new_system_backend(
         )
         .route("/policies/*name", delete(handle_delete_policy))
         .route("/token/revoke", revoke(handle_token_revocation))
+        .route("/token/renew", renew(handle_token_renewal))
         .route("/leases/revoke/*lease_id", update(handle_lease_revocation))
         .route("/leases/renew/*lease_id", update(handle_lease_renew))
         .route("/leases/lookup/*lease_id", read(handle_lease_lookup))
