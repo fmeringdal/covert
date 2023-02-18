@@ -1,5 +1,6 @@
 use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Response<T> {
@@ -11,7 +12,7 @@ pub struct Response<T> {
 
 pub(crate) struct BaseClient {
     api_url: String,
-    token: Option<String>,
+    token: RwLock<Option<String>>,
 }
 
 impl BaseClient {
@@ -22,13 +23,24 @@ impl BaseClient {
         }
         Self {
             api_url: api_url.to_string(),
-            token: None,
+            token: RwLock::new(None),
         }
     }
 
+    pub async fn set_token(&self, token: Option<String>) {
+        let mut token_l = self.token.write().await;
+        *token_l = token;
+    }
+
     pub async fn send<T: for<'de> serde::de::Deserialize<'de>>(
-        rb: RequestBuilder,
+        &self,
+        mut rb: RequestBuilder,
     ) -> Result<T, String> {
+        let token_l = self.token.read().await;
+        if let Some(token) = token_l.as_ref() {
+            rb = rb.header("X-Covert-Token", token);
+        }
+        drop(token_l);
         rb.send()
             .await
             .map_err(|e| format!("{e:#?}"))?
@@ -51,11 +63,8 @@ impl BaseClient {
         path: String,
     ) -> Result<T, String> {
         let client = reqwest::Client::new();
-        let mut request_builder = client.get(format!("{}{}", self.api_url, path));
-        if let Some(token) = self.token.as_ref() {
-            request_builder = request_builder.header("X-Covert-Token", token);
-        }
-        Self::send(request_builder).await
+        let request_builder = client.get(format!("{}{}", self.api_url, path));
+        self.send(request_builder).await
     }
 
     pub async fn delete<T: for<'de> serde::de::Deserialize<'de>>(
@@ -63,11 +72,8 @@ impl BaseClient {
         path: String,
     ) -> Result<T, String> {
         let client = reqwest::Client::new();
-        let mut request_builder = client.delete(format!("{}{}", self.api_url, path));
-        if let Some(token) = self.token.as_ref() {
-            request_builder = request_builder.header("X-Covert-Token", token);
-        }
-        Self::send(request_builder).await
+        let request_builder = client.delete(format!("{}{}", self.api_url, path));
+        self.send(request_builder).await
     }
 
     pub async fn put<T: Serialize, U: for<'de> serde::de::Deserialize<'de>>(
@@ -76,11 +82,8 @@ impl BaseClient {
         body: &T,
     ) -> Result<U, String> {
         let client = reqwest::Client::new();
-        let mut request_builder = client.put(format!("{}{}", self.api_url, path)).json(body);
-        if let Some(token) = self.token.as_ref() {
-            request_builder = request_builder.header("X-Covert-Token", token);
-        }
-        Self::send(request_builder).await
+        let request_builder = client.put(format!("{}{}", self.api_url, path)).json(body);
+        self.send(request_builder).await
     }
 
     pub async fn post<T: Serialize, U: for<'de> serde::de::Deserialize<'de>>(
@@ -89,10 +92,7 @@ impl BaseClient {
         body: &T,
     ) -> Result<U, String> {
         let client = reqwest::Client::new();
-        let mut request_builder = client.post(format!("{}{}", self.api_url, path)).json(body);
-        if let Some(token) = self.token.as_ref() {
-            request_builder = request_builder.header("X-Covert-Token", token);
-        }
-        Self::send(request_builder).await
+        let request_builder = client.post(format!("{}{}", self.api_url, path)).json(body);
+        self.send(request_builder).await
     }
 }

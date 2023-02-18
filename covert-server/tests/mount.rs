@@ -5,7 +5,7 @@ use std::time::Duration;
 use common::{setup, setup_unseal};
 use covert_sdk::{
     mounts::{BackendType, CreateMountParams, MountConfig, UpdateMountParams},
-    operator::{InitializeParams, InitializeResponse, UnsealParams},
+    operator::{InitializeParams, InitializeResponse, UnsealParams, UnsealResponse},
 };
 use covert_types::state::StorageState;
 
@@ -116,12 +116,16 @@ async fn recover_mounts_after_seal() {
     };
 
     // unseal
-    sdk.operator
+    let resp = sdk
+        .operator
         .unseal(&UnsealParams {
             shares: key_shares.shares.clone(),
         })
         .await
         .unwrap();
+    if let UnsealResponse::Complete { root_token } = resp {
+        sdk.set_token(Some(root_token.to_string())).await;
+    }
 
     // Mount kv secret engine
     sdk.mount

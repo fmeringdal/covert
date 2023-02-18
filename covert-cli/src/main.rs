@@ -71,6 +71,7 @@ async fn main() {
     let cli = Cli::parse();
 
     let sdk = Client::new(cli.covert_addr.clone());
+    sdk.set_token(cli.covert_token).await;
 
     match cli.command {
         Commands::Entity(entity) => entity.handle(&sdk).await,

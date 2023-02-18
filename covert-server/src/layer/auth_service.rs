@@ -83,12 +83,6 @@ where
                     req.extensions.insert(AuthPolicy::Root);
                     req.extensions.insert(Permissions::Root);
                 }
-
-                // TODO
-                if true {
-                    req.extensions.insert(AuthPolicy::Root);
-                    req.extensions.insert(Permissions::Root);
-                }
             }
 
             this.inner.call(req).await

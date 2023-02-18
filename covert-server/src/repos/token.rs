@@ -33,7 +33,7 @@ impl TokenRepo {
             INNER JOIN ENTITIES E ON T.entity_name = E.name
             INNER JOIN ENTITY_POLICIES EP ON E.name = EP.entity_name
             INNER JOIN POLICIES P ON EP.policy_name = P.name
-            WHERE T.token = ? AND T.expires_at > ?",
+            WHERE T.token = ? AND (T.expires_at IS NULL OR T.expires_at > ?)",
         )
         .bind(id.to_string())
         .bind(Utc::now())
