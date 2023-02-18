@@ -2,7 +2,7 @@
 name = "covert-system"
 description = "Covert server"
 license = "MIT OR Apache-2.0"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -12,12 +12,12 @@ anyhow = "1.0"
 aes-gcm = "0.10"
 bytes = { version = "1.1", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-covert-framework = { path = "../covert-framework", version = "0.1.1" }
-covert-storage = { path = "../covert-storage", version = "0.1.1" }
-covert-types = { path = "../covert-types", version = "0.1.1" }
-covert-kv = { path = "../backend/covert-kv", version = "0.1.1" }
-covert-psql = { path = "../backend/covert-psql", version = "0.1.1" }
-covert-userpass-auth = { path = "../backend/covert-userpass-auth", version = "0.1.1" }
+covert-framework = { path = "../covert-framework", version = "0.1.2" }
+covert-storage = { path = "../covert-storage", version = "0.1.2" }
+covert-types = { path = "../covert-types", version = "0.1.2" }
+covert-kv = { path = "../backend/covert-kv", version = "0.1.2" }
+covert-psql = { path = "../backend/covert-psql", version = "0.1.2" }
+covert-userpass-auth = { path = "../backend/covert-userpass-auth", version = "0.1.2" }
 futures = { version = "0.3", default-features = false }
 hex = "0.4"
 hmac = "0.12"
@@ -48,5 +48,5 @@ tracing-subscriber = "0.2"
 uuid = { version = "0.8", features = ["serde", "v4"] }
 
 [dev-dependencies]    
-covert-sdk = { path = "../covert-sdk", version = "0.1.1" }
+covert-sdk = { path = "../covert-sdk", version = "0.1.2" }
 tempfile = "3.3"

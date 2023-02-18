@@ -286,7 +286,7 @@ checksum = "5827cebf4670468b8772dd191856768aedcb1b0278a04f989f7766351917b9dc"
 
 [[package]]
 name = "covert"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "covert-sdk",
@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "covert-framework"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "covert-kv"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "bytes",
@@ -349,7 +349,7 @@ dependencies = [
 
 [[package]]
 name = "covert-psql"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -373,7 +373,7 @@ dependencies = [
 
 [[package]]
 name = "covert-sdk"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "covert-types",
  "reqwest",
@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "covert-storage"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -407,7 +407,7 @@ dependencies = [
 
 [[package]]
 name = "covert-system"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "covert-types"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "bytes",
@@ -477,7 +477,7 @@ dependencies = [
 
 [[package]]
 name = "covert-userpass-auth"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bcrypt",
  "covert-framework",
