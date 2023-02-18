@@ -3,8 +3,10 @@
 ## Unseal Covert
 
 ```sh
-covert operator init --shares 5 --threshold 3
-covert operator unseal --unseal-keys "<key1>,<key2>,<key3>"
+covert operator init --shares 1 --threshold 1
+covert operator unseal --unseal-keys "<key1>"
+# Export the root token received after unseal to your environment
+export COVERT_TOKEN=<TOKEN>
 ```
 
 ## Setup entity and policy
@@ -15,39 +17,36 @@ covert policy add --name admin --policy "path \"sys/*\" { capabilities = [\"read
 
 covert policy list
 
-covert entity attach-policy -n john -p admin
+covert entity attach-policy --name john --policies admin
 ```
 
 ## Enable userpass auth method
 ```sh
-covert auth enable -n userpass -p auth/userpass/
+covert auth enable userpass -p auth/userpass/
 ```
 
 ## Map userpass users to covert entities
 
 ```sh
 # Add user to the auth method
-covert userpass add --username john --password john --mount auth/userpass/
+covert userpass add --username john --password john --path auth/userpass/
 
 # List users
-covert userpass list -m auth/userpass/
+covert userpass list auth/userpass/
 
 # Connect user with covert entity
-covert entity attach-alias --name john --alias john --mount auth/userpass/
+covert entity attach-alias --name john --alias john --path auth/userpass/
 
 # Login with that user to the auth method
-covert TODO
+covert userpass login --username john --password john --path auth/userpass/
+
+# Export token received in previous command
+export COVERT_TOKEN=<TOKEN>
 ```
 
 ## Disable auth method
 
 ```sh
-# Disable
-covert auth disable -p auth/userpass/
-
-# Sign in not working
-covert TODO
-
-# Existing tokens has been revoked
-covert TODO
+# Disable also revokes all leases associated with the auth method
+covert auth disable auth/userpass/
 ```

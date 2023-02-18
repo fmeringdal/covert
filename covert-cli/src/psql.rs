@@ -30,7 +30,7 @@ pub enum PsqlSubcommand {
     },
     #[command(about = "create credentials for a role")]
     Creds {
-        #[arg(help = "role to generate credentials for")]
+        #[arg(short, long, help = "role to generate credentials for")]
         name: String,
         #[arg(short, long, help = "path to the psql secrets engine mount")]
         path: String,
@@ -39,7 +39,7 @@ pub enum PsqlSubcommand {
     },
     #[command(about = "add a role")]
     AddRole {
-        #[arg(help = "name of role to create")]
+        #[arg(short, long, help = "name of role to create")]
         name: String,
         #[arg(short, long)]
         path: String,
