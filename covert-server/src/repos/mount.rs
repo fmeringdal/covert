@@ -17,6 +17,7 @@ pub struct MountEntryRaw {
     pub default_lease_ttl: i64,
     pub max_lease_ttl: i64,
     pub variant: String,
+    pub namespace_id: String,
 }
 
 impl TryFrom<MountEntryRaw> for MountEntry {
@@ -40,6 +41,7 @@ impl TryFrom<MountEntryRaw> for MountEntry {
                 max_lease_ttl: Duration::from_millis(max_lease_ttl),
             },
             backend_type,
+            namespace_id: value.namespace_id,
         })
     }
 }
@@ -68,14 +70,15 @@ impl MountRepo {
         let default_lease_ttl =
             i64::try_from(mount.config.default_lease_ttl.as_millis()).unwrap_or(i64::MAX);
         sqlx::query(
-            "INSERT INTO MOUNTS (id, path, variant, max_lease_ttl, default_lease_ttl)
-            VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO MOUNTS (id, path, variant, max_lease_ttl, default_lease_ttl, namespace_id)
+            VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(mount.id.to_string())
         .bind(&mount.path)
         .bind(mount.backend_type.to_string())
         .bind(max_lease_ttl)
         .bind(default_lease_ttl)
+        .bind(&mount.namespace_id)
         .execute(self.pool.as_ref())
         .await
         .map(|_| ())
@@ -83,7 +86,12 @@ impl MountRepo {
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn set_config(&self, id: Uuid, config: &MountConfig) -> Result<(), Error> {
+    pub async fn set_config(
+        &self,
+        path: &str,
+        namespace_id: &str,
+        config: &MountConfig,
+    ) -> Result<(), Error> {
         let max_lease_ttl = i64::try_from(config.max_lease_ttl.as_millis()).unwrap_or(i64::MAX);
         let default_lease_ttl =
             i64::try_from(config.default_lease_ttl.as_millis()).unwrap_or(i64::MAX);
@@ -92,11 +100,12 @@ impl MountRepo {
             "UPDATE MOUNTS SET 
                     max_lease_ttl = ?,
                     default_lease_ttl = ?
-                WHERE id = ?",
+                WHERE path = ? AND namespace_id = ?",
         )
         .bind(max_lease_ttl)
         .bind(default_lease_ttl)
-        .bind(id.to_string())
+        .bind(path)
+        .bind(namespace_id)
         .execute(self.pool.as_ref())
         .await
         .map_err(Into::into)
@@ -104,14 +113,15 @@ impl MountRepo {
             if res.rows_affected() == 1 {
                 Ok(())
             } else {
-                Err(ErrorType::NotFound(format!("Mount `{id}` not found")).into())
+                Err(ErrorType::NotFound(format!("Mount at `{path}` not found")).into())
             }
         })
     }
 
     #[tracing::instrument(skip_all)]
-    pub async fn list(&self) -> Result<Vec<MountEntry>, Error> {
-        sqlx::query_as("SELECT * FROM MOUNTS")
+    pub async fn list(&self, namespace_id: &str) -> Result<Vec<MountEntry>, Error> {
+        sqlx::query_as("SELECT * FROM MOUNTS WHERE namespace_id = ? ORDER BY path ASC")
+            .bind(namespace_id)
             .fetch_all(self.pool.as_ref())
             .await
             .map(|mounts: Vec<MountEntryRaw>| {
@@ -124,9 +134,14 @@ impl MountRepo {
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn get_by_path(&self, path: &str) -> Result<Option<MountEntry>, Error> {
-        sqlx::query_as("SELECT * FROM MOUNTS WHERE path = ?")
+    pub async fn get_by_path(
+        &self,
+        path: &str,
+        namespace_id: &str,
+    ) -> Result<Option<MountEntry>, Error> {
+        sqlx::query_as("SELECT * FROM MOUNTS WHERE path = ? AND namespace_id = ?")
             .bind(path)
+            .bind(namespace_id)
             .fetch_optional(self.pool.as_ref())
             .await
             .map_err(Into::into)
@@ -134,9 +149,29 @@ impl MountRepo {
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn remove_by_path(&self, path: &str) -> Result<bool, Error> {
-        sqlx::query("DELETE FROM MOUNTS WHERE path = ?")
+    pub async fn longest_prefix(
+        &self,
+        path: &str,
+        namespace_id: &str,
+    ) -> Result<Option<MountEntry>, Error> {
+        sqlx::query_as(
+            "SELECT * FROM MOUNTS 
+            WHERE namespace_id = ? AND ? LIKE (path || '%')
+            ORDER BY length(path) DESC LIMIT 1",
+        )
+        .bind(namespace_id)
+        .bind(path)
+        .fetch_optional(self.pool.as_ref())
+        .await
+        .map_err(Into::into)
+        .and_then(|m: Option<MountEntryRaw>| m.map(TryInto::try_into).transpose())
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub async fn remove_by_path(&self, path: &str, namespace_id: &str) -> Result<bool, Error> {
+        sqlx::query("DELETE FROM MOUNTS WHERE path = ? AND namespace_id = ?")
             .bind(path)
+            .bind(namespace_id)
             .execute(self.pool.as_ref())
             .await
             .map_err(Into::into)
@@ -146,6 +181,10 @@ impl MountRepo {
 
 #[cfg(test)]
 pub mod tests {
+    use std::collections::HashMap;
+
+    use crate::repos::namespace::{Namespace, NamespaceRepo};
+
     use super::*;
 
     pub async fn pool() -> EncryptedPool {
@@ -158,8 +197,16 @@ pub mod tests {
 
     #[tokio::test]
     async fn crud() {
-        let pool = pool().await;
-        let store = MountRepo::new(Arc::new(pool));
+        let pool = Arc::new(pool().await);
+        let store = MountRepo::new(Arc::clone(&pool));
+        let ns_repo = NamespaceRepo::new(Arc::clone(&pool));
+
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        ns_repo.create(&ns).await.unwrap();
 
         let mut me = MountEntry {
             id: Uuid::new_v4(),
@@ -169,9 +216,10 @@ pub mod tests {
                 max_lease_ttl: Duration::from_secs(60),
             },
             path: "foo".into(),
+            namespace_id: ns.id.clone(),
         };
         assert!(store.create(&me).await.is_ok());
-        assert_eq!(store.list().await.unwrap(), vec![me.clone()]);
+        assert_eq!(store.list(&ns.id).await.unwrap(), vec![me.clone()]);
 
         let new_config = MountConfig {
             default_lease_ttl: Duration::ZERO,
@@ -179,16 +227,79 @@ pub mod tests {
         };
         me.config = new_config.clone();
 
-        assert!(store.set_config(me.id, &new_config).await.is_ok());
-        assert_eq!(store.list().await.unwrap(), vec![me.clone()]);
+        assert!(store
+            .set_config(&me.path, &me.namespace_id, &new_config)
+            .await
+            .is_ok());
+        assert_eq!(store.list(&ns.id).await.unwrap(), vec![me.clone()]);
 
-        assert_eq!(store.get_by_path(&me.path).await.unwrap(), Some(me.clone()));
         assert_eq!(
-            store.get_by_path(&format!("{}foo", me.path)).await.unwrap(),
+            store.get_by_path(&me.path, &ns.id).await.unwrap(),
+            Some(me.clone())
+        );
+        assert_eq!(
+            store
+                .get_by_path(&format!("{}foo", me.path), &ns.id)
+                .await
+                .unwrap(),
             None
         );
 
-        assert!(store.remove_by_path(&me.path).await.unwrap());
-        assert_eq!(store.get_by_path(&me.path).await.unwrap(), None);
+        assert!(store.remove_by_path(&me.path, &ns.id).await.unwrap());
+        assert_eq!(store.get_by_path(&me.path, &ns.id).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn longest_prefix() {
+        let pool = Arc::new(pool().await);
+        let store = MountRepo::new(Arc::clone(&pool));
+        let ns_repo = NamespaceRepo::new(Arc::clone(&pool));
+
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        ns_repo.create(&ns).await.unwrap();
+
+        assert!(store.longest_prefix("/", &ns.id).await.unwrap().is_none());
+
+        let mut ids = HashMap::new();
+
+        for path in ["/foo", "/foo/bar", "/foo/bar/baz"] {
+            let me = MountEntry {
+                id: Uuid::new_v4(),
+                backend_type: BackendType::Kv,
+                config: MountConfig {
+                    default_lease_ttl: Duration::from_secs(30),
+                    max_lease_ttl: Duration::from_secs(60),
+                },
+                path: path.into(),
+                namespace_id: ns.id.clone(),
+            };
+            assert!(store.create(&me).await.is_ok());
+            ids.insert(path, me.id);
+        }
+
+        assert!(store.longest_prefix("/", &ns.id).await.unwrap().is_none());
+
+        let tests = [
+            ("/foo", "/foo"),
+            ("/foo/ba", "/foo"),
+            ("/foo/bar", "/foo/bar"),
+            ("/foo/bar/ba", "/foo/bar"),
+            ("/foo/bar/baz", "/foo/bar/baz"),
+            ("/foo/bar/baz/", "/foo/bar/baz"),
+        ];
+        for (p1, p2) in tests {
+            assert_eq!(
+                store
+                    .longest_prefix(p1, &ns.id)
+                    .await
+                    .unwrap()
+                    .map(|me| me.id),
+                Some(ids.get(p2).copied().unwrap())
+            );
+        }
     }
 }

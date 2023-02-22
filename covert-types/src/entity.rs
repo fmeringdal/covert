@@ -6,12 +6,18 @@ pub struct Entity {
     pub name: String,
     /// Set to true if entity is disabled from performing any action
     pub disabled: bool,
+    /// Namespace
+    pub namespace_id: String,
 }
 
 impl Entity {
     #[must_use]
-    pub fn new(name: String, disabled: bool) -> Self {
-        Self { name, disabled }
+    pub fn new(name: String, disabled: bool, namespace_id: String) -> Self {
+        Self {
+            name,
+            disabled,
+            namespace_id,
+        }
     }
 
     #[must_use]

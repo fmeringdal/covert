@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rand::Rng;
+use rand::{distributions::Alphanumeric, Rng};
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     Pool, Sqlite,
@@ -74,23 +74,18 @@ impl Storage<Unsealed> {
     }
 }
 
-const ALPHABET: [char; 52] = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
-    't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
-    'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-];
-
 pub(crate) fn create_master_key() -> String {
-    let mut rng = rand::thread_rng();
-
-    let mut key = Vec::with_capacity(50);
-
-    for _ in 0..50 {
-        let idx = rng.gen_range(0..ALPHABET.len());
-        key.push(ALPHABET[idx]);
+    let mut key = "1".to_string();
+    // sqlcipher doesn't accept keys starting with a digit
+    while key.chars().next().expect("key not empty").is_numeric() {
+        key = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(50)
+            .map(char::from)
+            .collect();
     }
 
-    key.iter().collect()
+    key
 }
 
 pub(crate) fn create_ecrypted_pool(

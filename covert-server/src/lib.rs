@@ -18,7 +18,6 @@ mod system;
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use covert_storage::EncryptedPool;
-use covert_types::{backend::BackendType, mount::MountConfig};
 pub use expiration_manager::{ExpirationManager, LeaseEntry};
 pub use router::{Router, RouterService};
 use sqlx::sqlite::SqliteConnectOptions;
@@ -30,11 +29,12 @@ use tracing::info;
 use crate::{
     expiration_manager::clock::SystemClock,
     layer::{
-        auth_service::AuthServiceLayer, core_extension::CoreStateInjectorLayer,
-        lease_registration::LeaseRegistrationLayer, request_mapper::LogicalRequestResponseLayer,
+        auth_service::AuthServiceLayer, lease_registration::LeaseRegistrationLayer,
+        namespace_extension::NamespaceExtensionLayer, request_mapper::LogicalRequestResponseLayer,
+        storage_state_extension::StorageStateExtensionLayer,
     },
     repos::Repos,
-    system::SYSTEM_MOUNT_PATH,
+    system::new_system_backend,
 };
 
 pub struct Config {
@@ -56,7 +56,6 @@ pub async fn start(
     config: Config,
     shutdown_signal: impl Future<Output = ()>,
 ) -> Result<(), anyhow::Error> {
-    let router = Arc::new(Router::new());
     let encrypted_pool = Arc::new(EncryptedPool::new(&config.storage_path));
 
     let connect_opts = SqliteConnectOptions::new()
@@ -74,24 +73,16 @@ pub async fn start(
     // Run migration
     crate::migrations::migrate_unecrypted_db(&repos.unecrypted_pool).await?;
 
+    let router = Arc::new(Router::new(repos.mount.clone()));
     let expiration = Arc::new(ExpirationManager::new(
         Arc::clone(&router),
-        repos.lease.clone(),
-        repos.mount.clone(),
+        repos.clone(),
         SystemClock::new(),
     ));
 
     // Mount system backend
-    crate::system::mount(
-        &repos,
-        Arc::clone(&expiration),
-        Arc::clone(&router),
-        SYSTEM_MOUNT_PATH.to_string(),
-        BackendType::System,
-        MountConfig::default(),
-        true,
-    )
-    .await?;
+    let system = new_system_backend(repos.clone(), Arc::clone(&router), Arc::clone(&expiration));
+    router.mount_system(Arc::new(system)).await;
 
     let server_router_svc = ServiceBuilder::new()
         .concurrency_limit(1000)
@@ -99,8 +90,12 @@ pub async fn start(
         .layer(RequestBodyLimitLayer::new(1024 * 16))
         .layer(CorsLayer::permissive())
         .layer(LogicalRequestResponseLayer::new())
-        .layer(CoreStateInjectorLayer::new(Arc::clone(&repos.pool)))
-        .layer(AuthServiceLayer::new(repos.token.clone()))
+        .layer(StorageStateExtensionLayer::new(Arc::clone(&repos.pool)))
+        .layer(NamespaceExtensionLayer::new(repos.namespace.clone()))
+        .layer(AuthServiceLayer::new(
+            repos.token.clone(),
+            repos.namespace.clone(),
+        ))
         .layer(LeaseRegistrationLayer::new(
             expiration.clone(),
             repos.token.clone(),

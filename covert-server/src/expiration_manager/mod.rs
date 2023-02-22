@@ -23,8 +23,7 @@ use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use crate::error::{Error, ErrorType};
-use crate::repos::lease::LeaseRepo;
-use crate::repos::mount::MountRepo;
+use crate::repos::Repos;
 
 use self::clock::Clock;
 pub use self::lease::LeaseEntry;
@@ -37,10 +36,8 @@ pub struct ExpirationManager {
     background_task: Notify,
     /// Router to send revoke / renew requests to the backends
     router: Arc<Router>,
-    /// Lease storage
-    lease_repo: LeaseRepo,
-    /// Mount storage
-    mount_repo: MountRepo,
+    /// Storage
+    repos: Repos,
     /// Shutdown listener
     shutdown_rx: Arc<RwLock<mpsc::Receiver<()>>>,
     /// Shutdown transmitter
@@ -59,19 +56,13 @@ pub struct ExpirationManager {
 
 impl ExpirationManager {
     /// Create a new expiration manager.
-    pub fn new(
-        router: Arc<Router>,
-        lease_repo: LeaseRepo,
-        mount_repo: MountRepo,
-        clock: impl Clock,
-    ) -> Self {
+    pub fn new(router: Arc<Router>, repos: Repos, clock: impl Clock) -> Self {
         let (tx, rx) = mpsc::channel(1);
 
         ExpirationManager {
             background_task: Notify::new(),
             router,
-            lease_repo,
-            mount_repo,
+            repos,
             shutdown_rx: Arc::new(RwLock::new(rx)),
             shutdown_tx: tx,
             revocation_retry_timeout: Duration::seconds(5),
@@ -87,7 +78,7 @@ impl ExpirationManager {
     /// This is the only way to register new leases, leases should *not* be inserted
     /// directly to the [`LeaseStore`] without going throught the expiration manager.
     pub async fn register(&self, le: LeaseEntry) -> Result<(), Error> {
-        self.lease_repo.create(&le).await?;
+        self.repos.lease.create(&le).await?;
         // Let the revocation worker know about the lease.
         self.background_task.notify_one();
         Ok(())
@@ -97,8 +88,13 @@ impl ExpirationManager {
     pub async fn revoke_leases_by_mount_prefix(
         &self,
         prefix: &str,
+        namespace_id: &str,
     ) -> Result<Vec<LeaseEntry>, Error> {
-        let leases = self.lease_repo.list_by_mount_prefix(prefix).await?;
+        let leases = self
+            .repos
+            .lease
+            .list_by_mount_prefix(prefix, namespace_id)
+            .await?;
 
         let mut revoke_futures = FuturesOrdered::new();
 
@@ -124,19 +120,34 @@ impl ExpirationManager {
     }
 
     /// List all leases issued by mounts under a given path prefix.
-    pub async fn list_by_mount_prefix(&self, prefix: &str) -> Result<Vec<LeaseEntry>, Error> {
-        self.lease_repo.list_by_mount_prefix(prefix).await
+    pub async fn list_by_mount_prefix(
+        &self,
+        prefix: &str,
+        namespace_id: &str,
+    ) -> Result<Vec<LeaseEntry>, Error> {
+        self.repos
+            .lease
+            .list_by_mount_prefix(prefix, namespace_id)
+            .await
     }
 
     /// Lookup a lease by its id.
-    pub async fn lookup(&self, lease_id: &str) -> Result<Option<LeaseEntry>, Error> {
-        self.lease_repo.lookup(lease_id).await
+    pub async fn lookup(
+        &self,
+        lease_id: &str,
+        namespace_id: &str,
+    ) -> Result<Option<LeaseEntry>, Error> {
+        self.repos.lease.lookup(lease_id, namespace_id).await
     }
 
     /// Revoke a lease by its id.
-    pub async fn revoke_lease_entry_by_id(&self, lease_id: &str) -> Result<LeaseEntry, Error> {
+    pub async fn revoke_lease_entry_by_id(
+        &self,
+        lease_id: &str,
+        namespace_id: &str,
+    ) -> Result<LeaseEntry, Error> {
         let le = self
-            .lookup(lease_id)
+            .lookup(lease_id, namespace_id)
             .await?
             .ok_or_else(|| ErrorType::NotFound(format!("Lease `{lease_id}` not found")))?;
 
@@ -157,10 +168,19 @@ impl ExpirationManager {
     /// leased data.
     #[tracing::instrument(skip_all, fields(lease_id = le.id, issued_mount_path = le.issued_mount_path))]
     async fn send_lease_revoke_request(&self, le: &LeaseEntry) -> Result<(), ApiError> {
+        let ns = self
+            .repos
+            .namespace
+            .lookup(&le.namespace_id)
+            .await?
+            .ok_or_else(ApiError::internal_error)?;
+        let ns_path = self.repos.namespace.get_full_path(&le.namespace_id).await?;
+
         // Perform revocation
         let mut extensions = http::Extensions::new();
-        extensions.insert(AuthPolicy::Root);
+        extensions.insert(AuthPolicy::Authenticated);
         extensions.insert(StorageState::Unsealed);
+        extensions.insert(ns);
 
         let revoke_path = le.revoke_path.as_ref().map_or_else(
             || "sys/token/revoke".into(),
@@ -169,12 +189,12 @@ impl ExpirationManager {
 
         let req = Request {
             id: Uuid::default(),
+            namespace: ns_path.split('/').map(From::from).collect(),
             operation: Operation::Revoke,
             path: revoke_path,
             data: le.revoke_data.clone().into(),
             extensions,
             token: None,
-            is_sudo: true,
             params: Vec::default(),
             query_string: String::default(),
             headers: HashMap::default(),
@@ -190,19 +210,23 @@ impl ExpirationManager {
     }
 
     /// Renew a lease by its id.
+    #[allow(clippy::too_many_lines)]
     pub async fn renew_lease_entry(
         &self,
         lease_id: &str,
+        namespace_id: &str,
         ttl: Option<std::time::Duration>,
     ) -> Result<LeaseEntry, Error> {
         let mut le = self
-            .lease_repo
-            .lookup(lease_id)
+            .repos
+            .lease
+            .lookup(lease_id, namespace_id)
             .await?
             .ok_or_else(|| ErrorType::NotFound(format!("Lease `{lease_id}` not found")))?;
         let mount_config = self
-            .mount_repo
-            .get_by_path(&le.issued_mount_path)
+            .repos
+            .mount
+            .get_by_path(&le.issued_mount_path, &le.namespace_id)
             .await?
             .ok_or_else(|| ErrorType::MountNotFound {
                 path: le.issued_mount_path.clone(),
@@ -216,19 +240,26 @@ impl ExpirationManager {
                 ))
             })?;
 
+        let ns = self
+            .repos
+            .namespace
+            .lookup(&le.namespace_id)
+            .await?
+            .ok_or_else(|| {
+                ErrorType::InternalError(anyhow::Error::msg("Unable to find namespace for lease"))
+            })?;
+        let ns_path = self.repos.namespace.get_full_path(&le.namespace_id).await?;
+
         // Perform renewal
         let mut extensions = http::Extensions::new();
-        extensions.insert(AuthPolicy::Root);
+        extensions.insert(AuthPolicy::Authenticated);
         extensions.insert(StorageState::Unsealed);
+        extensions.insert(ns);
 
-        let renew_path = le
-            .renew_path
-            .as_ref()
-            // TODO: token renew endpoint does not exist yet
-            .map_or_else(
-                || "sys/token/renew".into(),
-                |renew_path| format!("{}{renew_path}", le.issued_mount_path),
-            );
+        let renew_path = le.renew_path.as_ref().map_or_else(
+            || "sys/token/renew".into(),
+            |renew_path| format!("{}{renew_path}", le.issued_mount_path),
+        );
 
         let data = RenewLeaseParams {
             ttl: ttl
@@ -242,11 +273,11 @@ impl ExpirationManager {
         let req = Request {
             id: Uuid::default(),
             operation: Operation::Renew,
+            namespace: ns_path.split('/').map(From::from).collect(),
             path: renew_path,
             data: data.into(),
             extensions,
             token: None,
-            is_sudo: true,
             params: Vec::default(),
             query_string: String::default(),
             headers: HashMap::default(),
@@ -277,8 +308,14 @@ impl ExpirationManager {
 
                 le.expires_at = now + ttl;
                 le.last_renewal_time = now;
-                self.lease_repo
-                    .renew(lease_id, le.expires_at, le.last_renewal_time)
+                self.repos
+                    .lease
+                    .renew(
+                        lease_id,
+                        &le.namespace_id,
+                        le.expires_at,
+                        le.last_renewal_time,
+                    )
                     .await?;
 
                 Ok(le)
@@ -303,7 +340,8 @@ impl ExpirationManager {
             let now = self.clock.now();
             #[allow(clippy::cast_possible_truncation)]
             let leases = match self
-                .lease_repo
+                .repos
+                .lease
                 .pull(self.revocation_worker_concurrency as u32, now)
                 .await
             {
@@ -320,7 +358,8 @@ impl ExpirationManager {
             if number_of_leases == 0 {
                 // TODO: this might need more care to ensure no leases are lost
                 let next_lease_fut = self
-                    .lease_repo
+                    .repos
+                    .lease
                     .peek()
                     .await?
                     .map(|le| le.expires_at - self.clock.now())
@@ -366,8 +405,9 @@ impl ExpirationManager {
         let res = self.send_lease_revoke_request(le).await;
         match res {
             Ok(_) => {
-                self.lease_repo
-                    .delete(&le.id)
+                self.repos
+                    .lease
+                    .delete(&le.id, &le.namespace_id)
                     .await
                     .map_err(|error| {
                         // **NOTE**: This means that revoke endpoints should be idempotent as
@@ -383,15 +423,17 @@ impl ExpirationManager {
                 // TODO: why is +1 needed here
                 if le.failed_revocation_attempts + 1 >= self.revocation_max_retries {
                     // Delete from store
-                    if let Err(error) = self.lease_repo.delete(&le.id).await {
+                    if let Err(error) = self.repos.lease.delete(&le.id, &le.namespace_id).await {
                         error!(?error, "failed to delete lease from store that has passed max number of revocation retries");
                     };
                 } else {
                     // Increase failed count
                     if let Err(error) = self
-                        .lease_repo
+                        .repos
+                        .lease
                         .increment_failed_revocation_attempts(
                             &le.id,
+                            &le.namespace_id,
                             // TODO: exp backoff and configure revocation_retry_timeout
                             le.expires_at + self.revocation_retry_timeout,
                         )
@@ -422,9 +464,11 @@ mod tests {
         mount::{MountConfig, MountEntry},
         response::Response,
     };
+    use sqlx::SqlitePool;
 
     use crate::{
-        expiration_manager::clock::test::TestClock, repos::mount::tests::pool, router::RouteEntry,
+        expiration_manager::clock::test::TestClock,
+        repos::{mount::tests::pool, namespace::Namespace},
         system::SYSTEM_MOUNT_PATH,
     };
 
@@ -552,14 +596,20 @@ mod tests {
         let clock = TestClock::new();
 
         let pool = Arc::new(pool().await);
+        let u_pool = SqlitePool::connect(":memory:").await.unwrap();
+        let repos = Repos::new(pool, u_pool);
 
-        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
-        let mount_repo = MountRepo::new(Arc::clone(&pool));
-        let router = Arc::new(Router::new());
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        repos.namespace.create(&ns).await.unwrap();
+
+        let router = Arc::new(Router::new(repos.mount.clone()));
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            lease_repo.clone(),
-            mount_repo.clone(),
+            repos.clone(),
             clock.clone(),
         ));
 
@@ -575,8 +625,9 @@ mod tests {
             backend_type: BackendType::Postgres,
             config: MountConfig::default(),
             path: "foo/".to_string(),
+            namespace_id: ns.id.clone(),
         };
-        mount_repo.create(&me).await.unwrap();
+        repos.mount.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -591,14 +642,8 @@ mod tests {
             variant: me.backend_type,
             handler,
         });
-        let re = RouteEntry::new(
-            Uuid::new_v4(),
-            me.path.clone(),
-            backend,
-            MountConfig::default(),
-        )
-        .unwrap();
-        router.mount(re).await.unwrap();
+
+        router.mount(me.id, Arc::clone(&backend)).await;
 
         let ttl = Duration::hours(4);
         let le = LeaseEntry::new(
@@ -609,18 +654,19 @@ mod tests {
             &(),
             clock.now(),
             ttl,
+            ns.id.clone(),
         )
         .unwrap();
 
         assert!(exp_m.register(le.clone()).await.is_ok());
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
-        let next_lease = lease_repo.peek().await.unwrap();
+        let next_lease = repos.lease.peek().await.unwrap();
         assert_eq!(next_lease, Some(le.clone()));
 
         // Wait ttl - 1 hours and it should still be there
         advance_to(&clock, le.expires_at - Duration::hours(1)).await;
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
 
         // Go to expire time
@@ -636,7 +682,7 @@ mod tests {
             }]
         );
 
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![]);
     }
 
@@ -646,13 +692,20 @@ mod tests {
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
-        let mount_repo = MountRepo::new(Arc::clone(&pool));
-        let router = Arc::new(Router::new());
+        let u_pool = SqlitePool::connect(":memory:").await.unwrap();
+        let repos = Repos::new(pool, u_pool);
+
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        repos.namespace.create(&ns).await.unwrap();
+
+        let router = Arc::new(Router::new(repos.mount.clone()));
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            lease_repo.clone(),
-            mount_repo.clone(),
+            repos.clone(),
             clock.clone(),
         ));
 
@@ -668,8 +721,9 @@ mod tests {
             backend_type: BackendType::System,
             config: MountConfig::default(),
             path: SYSTEM_MOUNT_PATH.to_string(),
+            namespace_id: ns.id.clone(),
         };
-        mount_repo.create(&me).await.unwrap();
+        repos.mount.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -684,25 +738,28 @@ mod tests {
             variant: me.backend_type,
             handler,
         });
-        let re = RouteEntry::new(
-            Uuid::new_v4(),
-            me.path.clone(),
-            backend,
-            MountConfig::default(),
-        )
-        .unwrap();
-        router.mount(re).await.unwrap();
+        router.mount_system(backend).await;
 
         let ttl = Duration::hours(4);
-        let le = LeaseEntry::new(me.path.clone(), None, &(), None, &(), clock.now(), ttl).unwrap();
+        let le = LeaseEntry::new(
+            me.path.clone(),
+            None,
+            &(),
+            None,
+            &(),
+            clock.now(),
+            ttl,
+            ns.id.clone(),
+        )
+        .unwrap();
 
         assert!(exp_m.register(le.clone()).await.is_ok());
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
 
         // Wait ttl - 1 hours and it should still be there
         advance_to(&clock, le.expires_at - Duration::hours(1)).await;
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
 
         // Go to revocation time
@@ -718,7 +775,7 @@ mod tests {
             }]
         );
 
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![]);
     }
 
@@ -728,13 +785,20 @@ mod tests {
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
-        let mount_repo = MountRepo::new(Arc::clone(&pool));
-        let router = Arc::new(Router::new());
+        let u_pool = SqlitePool::connect(":memory:").await.unwrap();
+        let repos = Repos::new(pool, u_pool);
+
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        repos.namespace.create(&ns).await.unwrap();
+
+        let router = Arc::new(Router::new(repos.mount.clone()));
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            lease_repo.clone(),
-            mount_repo.clone(),
+            repos.clone(),
             clock.clone(),
         ));
 
@@ -750,8 +814,9 @@ mod tests {
             backend_type: BackendType::System,
             config: MountConfig::default(),
             path: SYSTEM_MOUNT_PATH.to_string(),
+            namespace_id: ns.id.clone(),
         };
-        mount_repo.create(&me).await.unwrap();
+        repos.mount.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -766,23 +831,29 @@ mod tests {
             variant: me.backend_type,
             handler,
         });
-        let re = RouteEntry::new(
-            Uuid::new_v4(),
-            me.path.clone(),
-            backend,
-            MountConfig::default(),
-        )
-        .unwrap();
-        router.mount(re).await.unwrap();
+        router.mount_system(backend).await;
 
         let ttl = Duration::hours(4);
-        let le = LeaseEntry::new(me.path.clone(), None, &(), None, &(), clock.now(), ttl).unwrap();
+        let le = LeaseEntry::new(
+            me.path.clone(),
+            None,
+            &(),
+            None,
+            &(),
+            clock.now(),
+            ttl,
+            ns.id.clone(),
+        )
+        .unwrap();
 
         assert!(exp_m.register(le.clone()).await.is_ok());
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
-        assert!(exp_m.revoke_lease_entry_by_id(le.id()).await.is_ok());
-        let leases = lease_repo.list().await.unwrap();
+        assert!(exp_m
+            .revoke_lease_entry_by_id(le.id(), &le.namespace_id)
+            .await
+            .is_ok());
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![]);
 
         advance_to(&clock, le.expires_at).await;
@@ -798,7 +869,7 @@ mod tests {
         );
 
         // Sanity test that leases is still empty
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![]);
     }
 
@@ -809,13 +880,20 @@ mod tests {
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
-        let mount_repo = MountRepo::new(Arc::clone(&pool));
-        let router = Arc::new(Router::new());
+        let u_pool = SqlitePool::connect(":memory:").await.unwrap();
+        let repos = Repos::new(pool, u_pool);
+
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        repos.namespace.create(&ns).await.unwrap();
+
+        let router = Arc::new(Router::new(repos.mount.clone()));
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            lease_repo.clone(),
-            mount_repo.clone(),
+            repos.clone(),
             clock.clone(),
         ));
 
@@ -825,7 +903,6 @@ mod tests {
         });
         tokio::task::yield_now().await;
 
-        // Setup system mount
         let mount_config = MountConfig {
             max_lease_ttl: std::time::Duration::from_secs(3600 * 24),
             ..Default::default()
@@ -835,8 +912,9 @@ mod tests {
             backend_type: BackendType::Postgres,
             config: mount_config,
             path: "psql/".into(),
+            namespace_id: ns.id.clone(),
         };
-        mount_repo.create(&me).await.unwrap();
+        repos.mount.create(&me).await.unwrap();
 
         let renew_ttl = Duration::hours(2);
 
@@ -855,14 +933,8 @@ mod tests {
             variant: me.backend_type,
             handler,
         });
-        let re = RouteEntry::new(
-            Uuid::new_v4(),
-            me.path.clone(),
-            backend,
-            MountConfig::default(),
-        )
-        .unwrap();
-        router.mount(re).await.unwrap();
+
+        router.mount(me.id, Arc::clone(&backend)).await;
 
         let ttl = Duration::hours(4);
         let le = LeaseEntry::new(
@@ -873,19 +945,23 @@ mod tests {
             &(),
             clock.now(),
             ttl,
+            ns.id.clone(),
         )
         .unwrap();
 
         assert!(exp_m.register(le.clone()).await.is_ok());
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
 
         // 1 hour before it expires. Lets renew!
         advance_to(&clock, le.expires_at - Duration::hours(1)).await;
 
         // Renew
-        let new_le = exp_m.renew_lease_entry(le.id(), None).await.unwrap();
-        let leases = lease_repo.list().await.unwrap();
+        let new_le = exp_m
+            .renew_lease_entry(le.id(), &le.namespace_id, None)
+            .await
+            .unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![le.clone()]);
         let new_expire_time = new_le.expires_at;
 
@@ -927,7 +1003,7 @@ mod tests {
         drop(requests);
 
         // Sanity test that leases is still empty
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![]);
     }
 
@@ -937,15 +1013,18 @@ mod tests {
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
-        let mount_repo = MountRepo::new(Arc::clone(&pool));
-        let router = Arc::new(Router::new());
-        let mut exp_m = ExpirationManager::new(
-            Arc::clone(&router),
-            lease_repo.clone(),
-            mount_repo.clone(),
-            clock.clone(),
-        );
+        let u_pool = SqlitePool::connect(":memory:").await.unwrap();
+        let repos = Repos::new(pool, u_pool);
+
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        repos.namespace.create(&ns).await.unwrap();
+
+        let router = Arc::new(Router::new(repos.mount.clone()));
+        let mut exp_m = ExpirationManager::new(Arc::clone(&router), repos.clone(), clock.clone());
         exp_m.revocation_retry_timeout = Duration::milliseconds(10);
         exp_m.revocation_max_retries = 5;
         let exp_m = Arc::new(exp_m);
@@ -956,14 +1035,14 @@ mod tests {
         });
         tokio::task::yield_now().await;
 
-        // Setup system mount
         let me = MountEntry {
             id: Uuid::new_v4(),
             backend_type: BackendType::Postgres,
             config: MountConfig::default(),
             path: "psql/".into(),
+            namespace_id: ns.id.clone(),
         };
-        mount_repo.create(&me).await.unwrap();
+        repos.mount.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -978,14 +1057,8 @@ mod tests {
             variant: me.backend_type,
             handler,
         });
-        let re = RouteEntry::new(
-            Uuid::new_v4(),
-            me.path.clone(),
-            backend,
-            MountConfig::default(),
-        )
-        .unwrap();
-        router.mount(re).await.unwrap();
+
+        router.mount(me.id, Arc::clone(&backend)).await;
 
         let ttl = Duration::hours(4);
         let le = LeaseEntry::new(
@@ -997,6 +1070,7 @@ mod tests {
             &(),
             clock.now(),
             ttl,
+            ns.id.clone(),
         )
         .unwrap();
 
@@ -1014,7 +1088,7 @@ mod tests {
         drop(requests);
 
         // Lease should be deleted
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![]);
     }
 
@@ -1024,13 +1098,20 @@ mod tests {
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
-        let mount_repo = MountRepo::new(Arc::clone(&pool));
-        let router = Arc::new(Router::new());
+        let u_pool = SqlitePool::connect(":memory:").await.unwrap();
+        let repos = Repos::new(pool, u_pool);
+
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        repos.namespace.create(&ns).await.unwrap();
+
+        let router = Arc::new(Router::new(repos.mount.clone()));
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            lease_repo.clone(),
-            mount_repo.clone(),
+            repos.clone(),
             clock.clone(),
         ));
 
@@ -1040,14 +1121,14 @@ mod tests {
         });
         tokio::task::yield_now().await;
 
-        // Setup system mount
         let me = MountEntry {
             id: Uuid::new_v4(),
             backend_type: BackendType::Postgres,
             config: MountConfig::default(),
             path: "psql/".into(),
+            namespace_id: ns.id.clone(),
         };
-        mount_repo.create(&me).await.unwrap();
+        repos.mount.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -1062,14 +1143,8 @@ mod tests {
             variant: me.backend_type,
             handler,
         });
-        let re = RouteEntry::new(
-            Uuid::new_v4(),
-            me.path.clone(),
-            backend,
-            MountConfig::default(),
-        )
-        .unwrap();
-        router.mount(re).await.unwrap();
+
+        router.mount(me.id, Arc::clone(&backend)).await;
 
         let ttl = Duration::hours(4);
         let lease_count = 50;
@@ -1083,6 +1158,7 @@ mod tests {
                 &(),
                 clock.now(),
                 ttl,
+                ns.id.clone(),
             )
             .unwrap();
             assert!(exp_m.register(le.clone()).await.is_ok());
@@ -1090,7 +1166,7 @@ mod tests {
 
         assert_eq!(
             exp_m
-                .revoke_leases_by_mount_prefix(&me.path)
+                .revoke_leases_by_mount_prefix(&me.path, &ns.id)
                 .await
                 .unwrap()
                 .len(),
@@ -1098,7 +1174,7 @@ mod tests {
         );
 
         // Leases should be empty
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases, vec![]);
 
         // Number of leases revoked == number of requests
@@ -1121,15 +1197,18 @@ mod tests {
         let recorder = Arc::new(RequestRecorder(RwLock::new(Vec::new())));
 
         let pool = Arc::new(pool().await);
-        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
-        let mount_repo = MountRepo::new(Arc::clone(&pool));
-        let router = Arc::new(Router::new());
-        let mut exp_m = ExpirationManager::new(
-            Arc::clone(&router),
-            lease_repo.clone(),
-            mount_repo.clone(),
-            clock.clone(),
-        );
+        let u_pool = SqlitePool::connect(":memory:").await.unwrap();
+        let repos = Repos::new(pool, u_pool);
+
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        repos.namespace.create(&ns).await.unwrap();
+
+        let router = Arc::new(Router::new(repos.mount.clone()));
+        let mut exp_m = ExpirationManager::new(Arc::clone(&router), repos.clone(), clock.clone());
         exp_m.revocation_max_retries = 3;
         exp_m.revocation_timeout = std::time::Duration::from_millis(10);
         let exp_m = Arc::new(exp_m);
@@ -1140,14 +1219,14 @@ mod tests {
         });
         tokio::task::yield_now().await;
 
-        // Setup system mount
         let me = MountEntry {
             id: Uuid::new_v4(),
             backend_type: BackendType::Postgres,
             config: MountConfig::default(),
             path: "psql/".into(),
+            namespace_id: ns.id.clone(),
         };
-        mount_repo.create(&me).await.unwrap();
+        repos.mount.create(&me).await.unwrap();
 
         let recorder_moved = Arc::clone(&recorder);
         let clock_moved = clock.clone();
@@ -1162,14 +1241,8 @@ mod tests {
             variant: me.backend_type,
             handler,
         });
-        let re = RouteEntry::new(
-            Uuid::new_v4(),
-            me.path.clone(),
-            backend,
-            MountConfig::default(),
-        )
-        .unwrap();
-        router.mount(re).await.unwrap();
+
+        router.mount(me.id, Arc::clone(&backend)).await;
 
         let ttl = Duration::hours(4);
         let fast_lease_revocation_time = clock.now() + ttl;
@@ -1184,6 +1257,7 @@ mod tests {
                 &i,
                 clock.now(),
                 ttl,
+                ns.id.clone(),
             )
             .unwrap();
             assert!(exp_m.register(le.clone()).await.is_ok());
@@ -1198,6 +1272,7 @@ mod tests {
             &(),
             clock.now(),
             ttl - Duration::milliseconds(2),
+            ns.id.clone(),
         )
         .unwrap();
         assert!(exp_m.register(slow_lease.clone()).await.is_ok());
@@ -1205,14 +1280,14 @@ mod tests {
         advance_to(&clock, slow_lease.expires_at).await;
 
         // All leases still stored
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases.len(), lease_count + 1);
 
         // Advance to time where fast leases will be revoked
         advance_to(&clock, fast_lease_revocation_time).await;
 
         // All fast lease revocations are gone now
-        let leases = lease_repo.list().await.unwrap();
+        let leases = repos.lease.list().await.unwrap();
         assert_eq!(leases.len(), 1);
     }
 }

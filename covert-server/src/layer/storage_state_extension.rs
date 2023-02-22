@@ -7,12 +7,12 @@ use tower::{Layer, Service};
 use crate::response::ResponseWithCtx;
 
 #[derive(Clone)]
-pub struct CoreStateInjector<S> {
+pub struct StorageStateExtensionService<S> {
     storage_pool: Arc<EncryptedPool>,
     inner: S,
 }
 
-impl<S> CoreStateInjector<S> {
+impl<S> StorageStateExtensionService<S> {
     pub fn new(inner: S, storage_pool: Arc<EncryptedPool>) -> Self {
         Self {
             storage_pool,
@@ -21,7 +21,7 @@ impl<S> CoreStateInjector<S> {
     }
 }
 
-impl<S> Service<Request> for CoreStateInjector<S>
+impl<S> Service<Request> for StorageStateExtensionService<S>
 where
     S: Service<Request, Response = ResponseWithCtx, Error = ApiError>,
 {
@@ -45,20 +45,20 @@ where
     }
 }
 
-pub struct CoreStateInjectorLayer {
+pub struct StorageStateExtensionLayer {
     storage_pool: Arc<EncryptedPool>,
 }
 
-impl CoreStateInjectorLayer {
+impl StorageStateExtensionLayer {
     pub fn new(storage_pool: Arc<EncryptedPool>) -> Self {
         Self { storage_pool }
     }
 }
 
-impl<S: Service<Request>> Layer<S> for CoreStateInjectorLayer {
-    type Service = CoreStateInjector<S>;
+impl<S: Service<Request>> Layer<S> for StorageStateExtensionLayer {
+    type Service = StorageStateExtensionService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        CoreStateInjector::new(inner, Arc::clone(&self.storage_pool))
+        StorageStateExtensionService::new(inner, Arc::clone(&self.storage_pool))
     }
 }

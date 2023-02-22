@@ -13,23 +13,28 @@ pub struct Response<T> {
 pub(crate) struct BaseClient {
     api_url: String,
     token: RwLock<Option<String>>,
+    namespace: RwLock<Option<String>>,
 }
 
 impl BaseClient {
     pub fn new(api_url: impl ToString) -> Self {
-        let url = api_url.to_string();
-        if url.ends_with('/') {
-            todo!()
-        }
+        let namespace = std::env::var("COVERT_NAMESPACE").ok();
+
         Self {
             api_url: api_url.to_string(),
             token: RwLock::new(None),
+            namespace: RwLock::new(namespace),
         }
     }
 
     pub async fn set_token(&self, token: Option<String>) {
         let mut token_l = self.token.write().await;
         *token_l = token;
+    }
+
+    pub async fn set_namespace(&self, namespace: Option<String>) {
+        let mut ns_l = self.namespace.write().await;
+        *ns_l = namespace;
     }
 
     pub async fn send<T: for<'de> serde::de::Deserialize<'de>>(
@@ -41,6 +46,13 @@ impl BaseClient {
             rb = rb.header("X-Covert-Token", token);
         }
         drop(token_l);
+
+        let ns_l = self.namespace.read().await;
+        if let Some(ns) = ns_l.as_ref() {
+            rb = rb.header("X-Covert-Namespace", ns);
+        }
+        drop(ns_l);
+
         rb.send()
             .await
             .map_err(|e| format!("{e:#?}"))?

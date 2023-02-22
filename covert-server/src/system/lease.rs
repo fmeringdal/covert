@@ -12,6 +12,7 @@ use covert_types::{
 use crate::{
     error::{Error, ErrorType},
     expiration_manager::LeaseEntry,
+    repos::namespace::Namespace,
     ExpirationManager,
 };
 
@@ -29,10 +30,11 @@ impl From<&LeaseEntry> for LeaseEntryDTO {
 
 pub async fn handle_lease_revocation_by_mount(
     Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
+    Extension(ns): Extension<Namespace>,
     Path(prefix): Path<String>,
 ) -> Result<Response, Error> {
     let revoked_leases = expiration_manager
-        .revoke_leases_by_mount_prefix(&prefix)
+        .revoke_leases_by_mount_prefix(&prefix, &ns.id)
         .await?;
     let resp = RevokedLeasesResponse {
         leases: revoked_leases.iter().map(LeaseEntryDTO::from).collect(),
@@ -42,10 +44,11 @@ pub async fn handle_lease_revocation_by_mount(
 
 pub async fn handle_lease_revocation(
     Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
+    Extension(ns): Extension<Namespace>,
     Path(lease_id): Path<String>,
 ) -> Result<Response, Error> {
     let revoked_lease = expiration_manager
-        .revoke_lease_entry_by_id(&lease_id)
+        .revoke_lease_entry_by_id(&lease_id, &ns.id)
         .await?;
     let resp = RevokedLeaseResponse {
         lease: LeaseEntryDTO::from(&revoked_lease),
@@ -55,9 +58,12 @@ pub async fn handle_lease_revocation(
 
 pub async fn handle_list_leases(
     Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
+    Extension(ns): Extension<Namespace>,
     Path(prefix): Path<String>,
 ) -> Result<Response, Error> {
-    let leases = expiration_manager.list_by_mount_prefix(&prefix).await?;
+    let leases = expiration_manager
+        .list_by_mount_prefix(&prefix, &ns.id)
+        .await?;
     let resp = ListLeasesResponse {
         leases: leases.iter().map(LeaseEntryDTO::from).collect(),
     };
@@ -66,10 +72,11 @@ pub async fn handle_list_leases(
 
 pub async fn handle_lease_lookup(
     Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
+    Extension(ns): Extension<Namespace>,
     Path(lease_id): Path<String>,
 ) -> Result<Response, Error> {
     let lease = expiration_manager
-        .lookup(&lease_id)
+        .lookup(&lease_id, &ns.id)
         .await?
         .ok_or_else(|| ErrorType::NotFound(format!("Lease `{lease_id}` not found")))?;
     let resp = LookupLeaseResponse {
@@ -80,11 +87,12 @@ pub async fn handle_lease_lookup(
 
 pub async fn handle_lease_renew(
     Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
+    Extension(ns): Extension<Namespace>,
     Json(body): Json<RenewLeaseParams>,
     Path(lease_id): Path<String>,
 ) -> Result<Response, Error> {
     let lease = expiration_manager
-        .renew_lease_entry(&lease_id, body.ttl)
+        .renew_lease_entry(&lease_id, &ns.id, body.ttl)
         .await?;
     let resp = RenewLeaseResponse {
         lease: LeaseEntryDTO::from(&lease),

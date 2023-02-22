@@ -7,7 +7,7 @@ use hyper::Body;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{auth::AuthPolicy, error::ApiError, state::StorageState};
+use crate::error::ApiError;
 
 #[derive(Debug)]
 pub struct Request {
@@ -17,13 +17,14 @@ pub struct Request {
 
     pub path: String,
 
+    pub namespace: Vec<String>,
+
     pub data: Bytes,
     pub query_string: String,
     // TODO: don't use this
     pub extensions: http::Extensions,
     pub params: Vec<String>,
     pub token: Option<String>,
-    pub is_sudo: bool,
 
     pub headers: HashMap<String, String>,
 }
@@ -78,6 +79,22 @@ impl Request {
                     Some(token.to_string())
                 }
             });
+        let namespace = raw
+            .headers()
+            .get("X-Covert-Namespace")
+            .and_then(|namespace| namespace.to_str().ok())
+            .map_or_else(
+                || vec!["root".to_string()],
+                |namespace| {
+                    namespace
+                        .trim()
+                        .to_lowercase()
+                        .split('/')
+                        .map(ToString::to_string)
+                        .filter(|ns| !ns.is_empty())
+                        .collect::<Vec<_>>()
+                },
+            );
         let headers = raw
             .headers()
             .iter()
@@ -109,11 +126,10 @@ impl Request {
         Ok(Self {
             id: Uuid::new_v4(),
             operation,
+            namespace,
             query_string: uri.query().unwrap_or_default().to_string(),
             path: path.to_string(),
             extensions: Extensions::new(),
-            // http requests are only sudo if the token is sudo
-            is_sudo: false,
             token,
             params: vec![],
             data: bytes,
@@ -133,38 +149,5 @@ impl Request {
         self.path = self.path[prefix.len()..].to_string();
 
         true
-    }
-
-    // Builder methods
-    #[must_use]
-    pub fn sudo() -> Self {
-        let mut extensions = http::Extensions::new();
-        extensions.insert(AuthPolicy::Root);
-        extensions.insert(StorageState::Unsealed);
-
-        Self {
-            id: Uuid::default(),
-            operation: Operation::Read,
-            path: String::default(),
-            data: Bytes::default(),
-            query_string: String::default(),
-            extensions,
-            params: Vec::default(),
-            token: None,
-            is_sudo: true,
-            headers: HashMap::default(),
-        }
-    }
-
-    #[must_use]
-    pub fn with_operation(mut self, operation: Operation) -> Self {
-        self.operation = operation;
-        self
-    }
-
-    #[must_use]
-    pub fn with_path(mut self, path: &impl ToString) -> Self {
-        self.path = path.to_string();
-        self
     }
 }

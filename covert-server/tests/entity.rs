@@ -1,7 +1,6 @@
 mod common;
 
 use covert_sdk::entity::CreateEntityParams;
-use covert_types::entity::Entity;
 
 use common::setup_unseal;
 
@@ -17,11 +16,6 @@ async fn entity() {
         .unwrap()
         .entity;
 
-    assert_eq!(
-        entity,
-        Entity {
-            name,
-            disabled: false
-        }
-    );
+    assert_eq!(entity.name, name);
+    assert!(!entity.disabled);
 }

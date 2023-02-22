@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use covert_framework::Backend;
 use covert_types::{error::ApiError, mount::MountConfig, request::Request};
@@ -9,27 +9,25 @@ use uuid::Uuid;
 
 use crate::{
     error::{Error, ErrorType},
-    helpers::trie::{NodeRef, Trie},
+    repos::{mount::MountRepo, namespace::Namespace},
     response::{ResponseContext, ResponseWithCtx},
+    system::SYSTEM_MOUNT_PATH,
 };
 
 /// Router is used to do prefix based routing of a request to a logical backend
-#[derive(Debug)]
 pub struct Router {
-    root: RwLock<Trie<Arc<RouteEntry>>>,
-}
-
-impl Default for Router {
-    fn default() -> Self {
-        Self::new()
-    }
+    // TODO: dashmap
+    // mount id -> Backend
+    backend_lookup: RwLock<HashMap<String, Arc<Backend>>>,
+    mount_repo: MountRepo,
 }
 
 impl Router {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(mount_repo: MountRepo) -> Self {
         Router {
-            root: RwLock::new(Trie::default()),
+            backend_lookup: RwLock::new(HashMap::default()),
+            mount_repo,
         }
     }
 
@@ -41,167 +39,102 @@ impl Router {
         )
     )]
     pub async fn route(&self, mut req: Request) -> Result<ResponseWithCtx, ApiError> {
-        // Find the mount point
-        let trie = self.root.read().await;
-        let (re, mount) = trie
-            .longest_prefix(&req.path)
-            .map(|node| (Arc::clone(node.value), node.prefix.to_string()))
-            .ok_or_else(|| {
-                Error::from(ErrorType::MountNotFound {
-                    path: req.path.clone(),
-                })
-            })?;
-        drop(trie);
+        let (backend, path, config) = match req.extensions.get::<Namespace>() {
+            Some(_) if req.path.starts_with(SYSTEM_MOUNT_PATH) => {
+                let backend = self
+                    .get_system_mount()
+                    .await
+                    .ok_or_else(ApiError::internal_error)?;
 
-        req.advance_path(&mount);
-        req.extensions.insert(re.config_cloned());
+                (
+                    backend,
+                    SYSTEM_MOUNT_PATH.to_string(),
+                    MountConfig::default(),
+                )
+            }
+            Some(ns) => {
+                let mount = self
+                    .mount_repo
+                    .longest_prefix(&req.path, &ns.id)
+                    .await?
+                    .ok_or_else(|| {
+                        Error::from(ErrorType::MountNotFound {
+                            path: req.path.clone(),
+                        })
+                    })?;
+                let backend_lookup = self.backend_lookup.read().await;
+                let backend = backend_lookup
+                    .get(&mount.id.to_string())
+                    .map(Arc::clone)
+                    .ok_or_else(ApiError::internal_error)?;
+
+                (backend, mount.path, mount.config)
+            }
+            // Namespace can be null if not unsealed
+            None => {
+                // Only system backend can handle requests when not unsealed
+                if !req.path.starts_with(SYSTEM_MOUNT_PATH) {
+                    return Err(ApiError::unauthorized());
+                }
+
+                let backend = self
+                    .get_system_mount()
+                    .await
+                    .ok_or_else(ApiError::internal_error)?;
+
+                (
+                    backend,
+                    SYSTEM_MOUNT_PATH.to_string(),
+                    MountConfig::default(),
+                )
+            }
+        };
+
+        req.advance_path(&path);
+        req.extensions.insert(config.clone());
 
         let span = tracing::span!(
             tracing::Level::DEBUG,
             "backend_handle_request",
-            backend_mount_path = mount,
-            backend_type = %re.backend.variant(),
+            backend_mount_path = path,
+            backend_type = %backend.variant(),
         );
         let _enter = span.enter();
 
-        re.backend.handle_request(req).await.map(|response| {
+        backend.handle_request(req).await.map(|response| {
             let ctx = ResponseContext {
-                backend_config: re.config_cloned(),
-                backend_mount_path: mount,
+                backend_config: config,
+                backend_mount_path: path,
             };
             ResponseWithCtx { response, ctx }
         })
     }
 
-    pub async fn mounts(&self) -> Vec<TrieMount<RouteEntry>> {
-        let trie = self.root.read().await;
-        let mut mounts: Vec<NodeRef<'_, Arc<RouteEntry>>> = trie.mounts();
-        mounts.sort_by_key(|node| node.prefix);
-        mounts
-            .into_iter()
-            .map(|node| TrieMount {
-                value: Arc::clone(node.value),
-                path: node.prefix.to_string(),
-            })
-            .collect()
-    }
-
     pub async fn clear_mounts(&self) {
-        let mut trie = self.root.write().await;
-        trie.clear();
+        let mut backend_lookup = self.backend_lookup.write().await;
+        backend_lookup.clear();
     }
 
     // Mount is used to expose a logical backend at a given prefix, using a unique salt,
     // and the barrier view for that path.
-    pub async fn mount(&self, re: RouteEntry) -> Result<(), Error> {
-        let mut trie = self.root.write().await;
-        // Check if this is a nested mount
-        if let Some(existing) = trie.longest_prefix(&re.path) {
-            return Err(ErrorType::MountPathConflict {
-                path: re.path,
-                existing_path: existing.prefix.to_string(),
-            }
-            .into());
-        }
-        let re = Arc::new(re);
-        let path = re.path.clone();
-
-        // Create a route entry
-        trie.insert(&path, re);
-
-        Ok(())
+    pub async fn mount(&self, mount_id: Uuid, backend: Arc<Backend>) {
+        let mut backend_lookup = self.backend_lookup.write().await;
+        backend_lookup.insert(mount_id.to_string(), backend);
     }
 
-    #[tracing::instrument(skip(self))]
-    pub async fn update_mount(&self, path: &str, config: MountConfig) -> Result<(), Error> {
-        let mut trie = self.root.write().await;
-
-        let re = trie
-            .get(path)
-            .map(Arc::clone)
-            .ok_or_else(|| ErrorType::MountNotFound {
-                path: path.to_string(),
-            })?;
-        let mut old_config = re.config.write();
-        *old_config = config;
-        drop(old_config);
-        trie.insert(path, re);
-
-        Ok(())
+    pub async fn mount_system(&self, backend: Arc<Backend>) {
+        let mut backend_lookup = self.backend_lookup.write().await;
+        backend_lookup.insert("system".to_string(), backend);
     }
 
-    pub async fn remove(&self, path: &str) -> bool {
-        let mut trie = self.root.write().await;
-        trie.remove(path)
+    pub async fn get_system_mount(&self) -> Option<Arc<Backend>> {
+        let backend_lookup = self.backend_lookup.read().await;
+        backend_lookup.get("system").map(Arc::clone)
     }
 
-    pub async fn get(&self, path: &str) -> Option<Arc<RouteEntry>> {
-        let trie = self.root.read().await;
-        trie.get(path).map(Arc::clone)
-    }
-}
-
-#[derive(Debug)]
-pub struct TrieMount<T> {
-    pub path: String,
-    pub value: Arc<T>,
-}
-
-#[derive(Debug)]
-pub struct RouteEntry {
-    id: Uuid,
-    path: String,
-    backend: Arc<Backend>,
-    config: Arc<parking_lot::RwLock<MountConfig>>,
-}
-
-impl RouteEntry {
-    pub fn new(
-        id: Uuid,
-        path: String,
-        backend: Arc<Backend>,
-        config: MountConfig,
-    ) -> Result<Self, Error> {
-        if path.is_empty() {
-            return Err(ErrorType::InvalidMountPath {
-                path,
-                error: "Mount path cannot be empty".into(),
-            }
-            .into());
-        }
-        if path.starts_with('/') {
-            return Err(ErrorType::InvalidMountPath {
-                path,
-                error: "Mount path cannot start with a '/'".into(),
-            }
-            .into());
-        }
-        if !path.ends_with('/') {
-            return Err(ErrorType::InvalidMountPath {
-                path,
-                error: "Mount path should end with a '/'".into(),
-            }
-            .into());
-        }
-
-        Ok(Self {
-            id,
-            path,
-            backend,
-            config: Arc::new(parking_lot::RwLock::new(config)),
-        })
-    }
-
-    pub fn backend(&self) -> &Backend {
-        self.backend.as_ref()
-    }
-
-    pub fn config_cloned(&self) -> MountConfig {
-        self.config.read().clone()
-    }
-
-    pub fn id(&self) -> Uuid {
-        self.id
+    pub async fn remove(&self, mount_id: Uuid) -> bool {
+        let mut backend_lookup = self.backend_lookup.write().await;
+        backend_lookup.remove(&mount_id.to_string()).is_some()
     }
 }
 

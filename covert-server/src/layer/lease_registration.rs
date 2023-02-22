@@ -16,6 +16,7 @@ use crate::{
     error::{Error, ErrorType},
     repos::{
         entity::EntityRepo,
+        namespace::Namespace,
         token::{TokenEntry, TokenRepo},
     },
     response::ResponseWithCtx,
@@ -68,12 +69,16 @@ where
     fn call(&mut self, req: Request) -> Self::Future {
         let mut this = self.clone();
         Box::pin(async move {
+            let ns = req.extensions.get::<Namespace>().cloned();
+
             let resp = this.inner.call(req).await?;
             let backend_mount_path = &resp.ctx.backend_mount_path;
             let backend_config = &resp.ctx.backend_config;
 
             match resp.response {
                 Response::Lease(lease) => {
+                    let ns = ns.ok_or_else(ApiError::internal_error)?;
+
                     let now = Utc::now();
                     let issued_at = now;
                     let ttl = calculate_ttl(now, issued_at, backend_config, lease.ttl)
@@ -87,6 +92,7 @@ where
                         &lease.renew.data,
                         issued_at,
                         ttl,
+                        ns.id.clone(),
                     )?;
                     let lease_id = le.id().to_string();
                     this.expiration_manager.register(le).await?;
@@ -105,11 +111,16 @@ where
                     })
                 }
                 Response::Auth(auth) => {
+                    let ns = ns.ok_or_else(ApiError::internal_error)?;
+
                     let alias = EntityAlias {
                         name: auth.alias.clone(),
                         mount_path: backend_mount_path.clone(),
                     };
-                    let entity = this.entity_repo.get_entity_from_alias(&alias).await?;
+                    let entity = this
+                        .entity_repo
+                        .get_entity_from_alias(&alias, &ns.id)
+                        .await?;
                     match entity {
                         Some(entity) => {
                             let now = Utc::now();
@@ -117,7 +128,8 @@ where
                             let ttl = calculate_ttl(now, issued_at, backend_config, auth.ttl)
                                 .map_err(|_| ApiError::internal_error())?;
 
-                            let token_entry = TokenEntry::new(entity.name().to_string(), ttl);
+                            let token_entry =
+                                TokenEntry::new(entity.name().to_string(), ttl, ns.id.clone());
                             this.token_repo.create(&token_entry).await?;
                             let token = token_entry.id();
 
@@ -136,6 +148,7 @@ where
                                 &renew_data,
                                 issued_at,
                                 ttl,
+                                ns.id.clone(),
                             )?;
                             let lease_id = lease.id().to_string();
                             this.expiration_manager.register(lease).await?;
@@ -218,16 +231,13 @@ mod tests {
     };
     use hyper::http::Extensions;
     use serde_json::Value;
+    use sqlx::SqlitePool;
     use tower::ServiceExt;
     use uuid::Uuid;
 
     use crate::{
         expiration_manager::clock::test::TestClock,
-        repos::{
-            lease::LeaseRepo,
-            mount::{tests::pool, MountRepo},
-            policy::PolicyRepo,
-        },
+        repos::{mount::tests::pool, Repos},
         response::ResponseContext,
         Router,
     };
@@ -273,16 +283,20 @@ mod tests {
         let clock = TestClock::new();
 
         let pool = Arc::new(pool().await);
+        let u_pool = SqlitePool::connect(":memory:").await.unwrap();
+        let repos = Repos::new(pool, u_pool);
 
-        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
-        let mount_repo = MountRepo::new(Arc::clone(&pool));
-        let token_repo = TokenRepo::new(Arc::clone(&pool));
-        let entity_repo = EntityRepo::new(Arc::clone(&pool));
-        let router = Arc::new(Router::new());
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        repos.namespace.create(&ns).await.unwrap();
+
+        let router = Arc::new(Router::new(repos.mount.clone()));
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            lease_repo.clone(),
-            mount_repo.clone(),
+            repos.clone(),
             clock.clone(),
         ));
 
@@ -291,22 +305,26 @@ mod tests {
             config: MountConfig::default(),
             id: Uuid::new_v4(),
             path: "psql/".to_string(),
+            namespace_id: ns.id.clone(),
         };
-        mount_repo.create(&mount).await.unwrap();
+        repos.mount.create(&mount).await.unwrap();
 
         let inner_handler = tower::service_fn(handler);
-        let svc = LeaseRegistrationService::new(inner_handler, exp_m, token_repo, entity_repo);
+        let svc = LeaseRegistrationService::new(inner_handler, exp_m, repos.token, repos.entity);
 
         let mut headers = HashMap::new();
         headers.insert("response-type".to_string(), "lease".to_string());
         headers.insert("mount-path".to_string(), mount.path.to_string());
 
+        let mut extensions = Extensions::default();
+        extensions.insert(ns.clone());
+
         let req = Request {
             id: Uuid::new_v4(),
+            namespace: vec!["root".to_string()],
             data: Bytes::default(),
-            extensions: Extensions::default(),
+            extensions,
             headers,
-            is_sudo: false,
             operation: Operation::Read,
             params: Vec::default(),
             path: String::default(),
@@ -321,8 +339,9 @@ mod tests {
         assert_eq!(lease_resp.data.password, "bar");
 
         // Lookup lease
-        let lease = lease_repo
-            .lookup(&lease_resp.lease_id)
+        let lease = repos
+            .lease
+            .lookup(&lease_resp.lease_id, &ns.id)
             .await
             .unwrap()
             .unwrap();
@@ -334,17 +353,20 @@ mod tests {
         let clock = TestClock::new();
 
         let pool = Arc::new(pool().await);
+        let u_pool = SqlitePool::connect(":memory:").await.unwrap();
+        let repos = Repos::new(pool, u_pool);
 
-        let lease_repo = LeaseRepo::new(Arc::clone(&pool));
-        let mount_repo = MountRepo::new(Arc::clone(&pool));
-        let token_repo = TokenRepo::new(Arc::clone(&pool));
-        let entity_repo = EntityRepo::new(Arc::clone(&pool));
-        let policy_repo = PolicyRepo::new(Arc::clone(&pool));
-        let router = Arc::new(Router::new());
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        repos.namespace.create(&ns).await.unwrap();
+
+        let router = Arc::new(Router::new(repos.mount.clone()));
         let exp_m = Arc::new(ExpirationManager::new(
             Arc::clone(&router),
-            lease_repo.clone(),
-            mount_repo.clone(),
+            repos.clone(),
             clock.clone(),
         ));
 
@@ -353,18 +375,21 @@ mod tests {
             config: MountConfig::default(),
             id: Uuid::new_v4(),
             path: "auth/userpass/".to_string(),
+            namespace_id: ns.id.clone(),
         };
-        mount_repo.create(&mount).await.unwrap();
+        repos.mount.create(&mount).await.unwrap();
 
-        let entity = Entity::new("foo".to_string(), false);
-        entity_repo.create(&entity).await.unwrap();
-        entity_repo
+        let entity = Entity::new("foo".to_string(), false, ns.id.clone());
+        repos.entity.create(&entity).await.unwrap();
+        repos
+            .entity
             .attach_alias(
                 &entity.name,
                 &EntityAlias {
                     name: "foo".to_string(),
                     mount_path: mount.path.clone(),
                 },
+                &ns.id,
             )
             .await
             .unwrap();
@@ -375,27 +400,32 @@ mod tests {
                 path: "secrets/marketing/".to_string(),
                 operations: vec![Operation::Read],
             }],
+            ns.id.clone(),
         );
-        policy_repo.create(&policy).await.unwrap();
-        entity_repo
-            .attach_policy(&entity.name, &policy.name)
+        repos.policy.create(&policy).await.unwrap();
+        repos
+            .entity
+            .attach_policy(&entity.name, &policy.name, &ns.id)
             .await
             .unwrap();
 
         let inner_handler = tower::service_fn(handler);
         let svc =
-            LeaseRegistrationService::new(inner_handler, exp_m, token_repo.clone(), entity_repo);
+            LeaseRegistrationService::new(inner_handler, exp_m, repos.token.clone(), repos.entity);
 
         let mut headers = HashMap::new();
         headers.insert("response-type".to_string(), "auth".to_string());
         headers.insert("mount-path".to_string(), mount.path.to_string());
 
+        let mut extensions = Extensions::default();
+        extensions.insert(ns.clone());
+
         let req = Request {
             id: Uuid::new_v4(),
+            namespace: vec!["root".to_string()],
             data: Bytes::default(),
-            extensions: Extensions::default(),
+            extensions,
             headers,
-            is_sudo: false,
             operation: Operation::Read,
             params: Vec::default(),
             path: String::default(),
@@ -408,8 +438,9 @@ mod tests {
         assert_eq!(auth_resp.ttl, mount.config.default_lease_ttl);
 
         // Lookup lease
-        let lease = lease_repo
-            .lookup(&auth_resp.lease_id)
+        let lease = repos
+            .lease
+            .lookup(&auth_resp.lease_id, &ns.id)
             .await
             .unwrap()
             .unwrap();
@@ -417,7 +448,8 @@ mod tests {
 
         // Check that token was created
         assert_eq!(
-            token_repo
+            repos
+                .token
                 .lookup_policies(&auth_resp.token)
                 .await
                 .unwrap()

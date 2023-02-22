@@ -28,8 +28,8 @@ impl LeaseRepo {
     #[tracing::instrument(skip_all, fields(lease_id = le.id))]
     pub async fn create(&self, le: &LeaseEntry) -> Result<(), Error> {
         sqlx::query(
-            "INSERT INTO LEASES (id, issued_mount_path, revoke_path, revoke_data, renew_path, renew_data, issued_at, expires_at, last_renewal_time, failed_revocation_attempts)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO LEASES (id, issued_mount_path, revoke_path, revoke_data, renew_path, renew_data, issued_at, expires_at, last_renewal_time, failed_revocation_attempts, namespace_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&le.id)
         .bind(&le.issued_mount_path)
@@ -41,6 +41,7 @@ impl LeaseRepo {
         .bind(le.expires_at)
         .bind(le.last_renewal_time)
         .bind(le.failed_revocation_attempts)
+        .bind(&le.namespace_id)
         .execute(self.pool.as_ref())
         .await
         .map_err(Into::into)
@@ -80,20 +81,22 @@ impl LeaseRepo {
         .map_err(Into::into)
     }
 
-    #[tracing::instrument(skip_all, fields(lease_id))]
+    #[tracing::instrument(skip(self))]
     pub async fn increment_failed_revocation_attempts(
         &self,
         lease_id: &str,
+        namespace_id: &str,
         expires_at: DateTime<Utc>,
     ) -> Result<(), Error> {
         sqlx::query(
             "UPDATE LEASES 
             SET failed_revocation_attempts = failed_revocation_attempts + 1,
                 expires_at = $1
-            WHERE id = $2",
+            WHERE id = $2 AND namespace_id = $3",
         )
         .bind(expires_at)
         .bind(lease_id)
+        .bind(namespace_id)
         .execute(self.pool.as_ref())
         .await
         .map_err(Into::into)
@@ -113,6 +116,7 @@ impl LeaseRepo {
     pub async fn renew(
         &self,
         lease_id: &str,
+        namespace_id: &str,
         expires_at: DateTime<Utc>,
         last_renewal_time: DateTime<Utc>,
     ) -> Result<(), Error> {
@@ -120,11 +124,12 @@ impl LeaseRepo {
             "UPDATE LEASES SET
                 expires_at = ?,
                 last_renewal_time = ?
-                WHERE id = ?",
+                WHERE id = ? AND namespace_id = ?",
         )
         .bind(expires_at)
         .bind(last_renewal_time)
         .bind(lease_id)
+        .bind(namespace_id)
         .execute(self.pool.as_ref())
         .await
         .map_err(Into::into)
@@ -138,15 +143,17 @@ impl LeaseRepo {
     }
 
     #[tracing::instrument(skip_all, fields(lease_id))]
-    pub async fn delete(&self, lease_id: &str) -> Result<bool, Error> {
-        sqlx::query("DELETE FROM LEASES WHERE id = ?")
+    pub async fn delete(&self, lease_id: &str, namespace_id: &str) -> Result<bool, Error> {
+        sqlx::query("DELETE FROM LEASES WHERE id = ? AND namespace_id = ?")
             .bind(lease_id)
+            .bind(namespace_id)
             .execute(self.pool.as_ref())
             .await
             .map_err(Into::into)
             .map(|res| res.rows_affected() == 1)
     }
 
+    // TODO: this is only ever used in tests and should be deleted
     #[tracing::instrument(skip_all)]
     pub async fn list(&self) -> Result<Vec<LeaseEntry>, Error> {
         sqlx::query_as("SELECT * FROM LEASES")
@@ -156,19 +163,29 @@ impl LeaseRepo {
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn list_by_mount_prefix(&self, path_prefix: &str) -> Result<Vec<LeaseEntry>, Error> {
+    pub async fn list_by_mount_prefix(
+        &self,
+        path_prefix: &str,
+        namespace_id: &str,
+    ) -> Result<Vec<LeaseEntry>, Error> {
         let prefix_pattern = format!("{path_prefix}%");
-        sqlx::query_as("SELECT * FROM LEASES WHERE issued_mount_path LIKE ?")
+        sqlx::query_as("SELECT * FROM LEASES WHERE issued_mount_path LIKE ? AND namespace_id = ?")
             .bind(prefix_pattern)
+            .bind(namespace_id)
             .fetch_all(self.pool.as_ref())
             .await
             .map_err(Into::into)
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn lookup(&self, lease_id: &str) -> Result<Option<LeaseEntry>, Error> {
-        sqlx::query_as("SELECT * FROM LEASES WHERE id LIKE ?")
+    pub async fn lookup(
+        &self,
+        lease_id: &str,
+        namespace_id: &str,
+    ) -> Result<Option<LeaseEntry>, Error> {
+        sqlx::query_as("SELECT * FROM LEASES WHERE id = ? AND namespace_id = ?")
             .bind(lease_id)
+            .bind(namespace_id)
             .fetch_optional(self.pool.as_ref())
             .await
             .map_err(Into::into)
@@ -184,7 +201,10 @@ mod tests {
     };
     use uuid::Uuid;
 
-    use crate::repos::mount::{tests::pool, MountRepo};
+    use crate::repos::{
+        mount::{tests::pool, MountRepo},
+        namespace::{Namespace, NamespaceRepo},
+    };
 
     use super::*;
 
@@ -194,6 +214,14 @@ mod tests {
         let pool = Arc::new(pool().await);
         let mount_repo = MountRepo::new(Arc::clone(&pool));
         let lease_repo = LeaseRepo::new(Arc::clone(&pool));
+        let ns_repo = NamespaceRepo::new(Arc::clone(&pool));
+
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        ns_repo.create(&ns).await.unwrap();
 
         // Create postgres mount
         let userpass_mount = MountEntry {
@@ -201,6 +229,7 @@ mod tests {
             backend_type: BackendType::Postgres,
             config: MountConfig::default(),
             path: "psql/".into(),
+            namespace_id: ns.id.clone(),
         };
         mount_repo.create(&userpass_mount).await.unwrap();
 
@@ -221,6 +250,7 @@ mod tests {
             issued_mount_path: userpass_mount.path.clone(),
             last_renewal_time: Utc::now(),
             failed_revocation_attempts: 0,
+            namespace_id: ns.id.clone(),
         };
         assert!(lease_repo.create(&lease_foo_bar).await.is_ok());
         assert_eq!(
@@ -239,6 +269,7 @@ mod tests {
             issued_mount_path: userpass_mount.path.clone(),
             last_renewal_time: Utc::now(),
             failed_revocation_attempts: 0,
+            namespace_id: ns.id.clone(),
         };
         assert!(lease_repo.create(&lease_bar_foo).await.is_ok());
         assert_eq!(
@@ -267,14 +298,14 @@ mod tests {
         // List by mount path prefix
         assert_eq!(
             lease_repo
-                .list_by_mount_prefix(&userpass_mount.path)
+                .list_by_mount_prefix(&userpass_mount.path, &ns.id)
                 .await
                 .unwrap(),
             vec![lease_foo_bar.clone(), lease_bar_foo.clone()]
         );
         assert_eq!(
             lease_repo
-                .list_by_mount_prefix("random_foo_bar/")
+                .list_by_mount_prefix("random_foo_bar/", &ns.id)
                 .await
                 .unwrap(),
             vec![]
@@ -286,6 +317,7 @@ mod tests {
         assert!(lease_repo
             .renew(
                 &lease_foo_bar.id,
+                &lease_foo_bar.namespace_id,
                 lease_bar_foo.expires_at,
                 lease_foo_bar.last_renewal_time
             )
@@ -294,12 +326,18 @@ mod tests {
 
         // Lookup by id
         assert_eq!(
-            lease_repo.lookup(lease_foo_bar.id()).await.unwrap(),
+            lease_repo
+                .lookup(lease_foo_bar.id(), &lease_foo_bar.namespace_id)
+                .await
+                .unwrap(),
             Some(lease_foo_bar.clone())
         );
 
         // Delete one lease
-        assert!(lease_repo.delete(lease_foo_bar.id()).await.unwrap());
+        assert!(lease_repo
+            .delete(lease_foo_bar.id(), &lease_foo_bar.namespace_id)
+            .await
+            .unwrap());
 
         // And it should be gone
         assert_eq!(
@@ -311,12 +349,16 @@ mod tests {
         lease_bar_foo.expires_at += Duration::seconds(10);
         lease_bar_foo.failed_revocation_attempts += 1;
         assert!(lease_repo
-            .increment_failed_revocation_attempts(lease_bar_foo.id(), lease_bar_foo.expires_at)
+            .increment_failed_revocation_attempts(
+                lease_bar_foo.id(),
+                &lease_bar_foo.namespace_id,
+                lease_bar_foo.expires_at
+            )
             .await
             .is_ok());
 
         let lease_bar_foo_from_store = lease_repo
-            .lookup(lease_bar_foo.id())
+            .lookup(lease_bar_foo.id(), &lease_bar_foo.namespace_id)
             .await
             .unwrap()
             .unwrap();

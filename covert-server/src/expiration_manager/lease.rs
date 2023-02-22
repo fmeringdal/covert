@@ -16,9 +16,11 @@ pub struct LeaseEntry {
     pub expires_at: DateTime<Utc>,
     pub last_renewal_time: DateTime<Utc>,
     pub failed_revocation_attempts: u32,
+    pub namespace_id: String,
 }
 
 impl LeaseEntry {
+    #[allow(clippy::too_many_arguments)]
     pub fn new<T: Serialize>(
         issued_mount_path: String,
         revoke_path: Option<String>,
@@ -27,6 +29,7 @@ impl LeaseEntry {
         renew_data: &T,
         now: DateTime<Utc>,
         ttl: Duration,
+        namespace_id: String,
     ) -> Result<Self, Error> {
         let expires_at = now + ttl;
         let issued_at = now;
@@ -49,6 +52,7 @@ impl LeaseEntry {
             expires_at,
             last_renewal_time,
             failed_revocation_attempts: 0,
+            namespace_id,
         })
     }
 

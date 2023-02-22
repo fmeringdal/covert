@@ -75,10 +75,7 @@ impl Service<Request> for Route {
             return Box::pin(async { Err(ApiError::unauthorized()) });
         };
         let auth = match self.config.policy {
-            AuthPolicy::Root => *policy == AuthPolicy::Root,
-            AuthPolicy::Authenticated => {
-                matches!(policy, AuthPolicy::Root | AuthPolicy::Authenticated)
-            }
+            AuthPolicy::Authenticated => *policy == AuthPolicy::Authenticated,
             AuthPolicy::Unauthenticated => true,
         };
         if !auth {
