@@ -27,7 +27,7 @@ use crate::{
     ExpirationManager, Router,
 };
 
-use super::new_system_backend;
+use super::{new_system_backend, SYSTEM_MOUNT_PATH};
 
 #[tracing::instrument(skip(repos, expiration_manager, router))]
 pub async fn handle_mount(
@@ -259,6 +259,20 @@ pub async fn mount(
     variant: BackendType,
     config: MountConfig,
 ) -> Result<Uuid, Error> {
+    if variant == BackendType::System {
+        return Err(ErrorType::InvalidMountType {
+            variant: BackendType::System,
+        })?;
+    }
+
+    if path.starts_with(SYSTEM_MOUNT_PATH) || SYSTEM_MOUNT_PATH.starts_with(&path) {
+        return Err(ErrorType::MountPathConflict {
+            path,
+            existing_path: SYSTEM_MOUNT_PATH.to_string(),
+        }
+        .into());
+    }
+
     // Check if conflicting path exist
     // TODO: this should take a lock on mount creation
     if let Some(mount) = repos.mount.longest_prefix(&path, &namespace_id).await? {

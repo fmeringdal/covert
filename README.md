@@ -4,7 +4,7 @@
 
 ## What
 
-Covert is a secrets management solution written in Rust, mostly a rewrite of [HashiCorp Vault](https://github.com/hashicorp/vault).
+Covert is a (experimental) secrets management solution written in Rust, mostly a rewrite of [HashiCorp Vault](https://github.com/hashicorp/vault).
 
 ## Getting started
 

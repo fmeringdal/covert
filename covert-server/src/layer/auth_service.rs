@@ -603,7 +603,7 @@ mod tests {
 
         // Create entity and policy in root ns
         let entity = Entity {
-            name: "f root".to_string(),
+            name: "f-root".to_string(),
             disabled: false,
             namespace_id: f_ns.id.clone(),
         };

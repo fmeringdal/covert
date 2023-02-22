@@ -24,14 +24,24 @@ CREATE TABLE IF NOT EXISTS ENTITIES (
     "name" TEXT NOT NULL,
     "disabled" INTEGER NOT NULL,
     namespace_id TEXT NOT NULL REFERENCES NAMESPACES(id) ON DELETE CASCADE ON UPDATE CASCADE,
-    PRIMARY KEY(namespace_id, "name")
+    PRIMARY KEY(namespace_id, "name"),
+    CONSTRAINT VALID_NAME CHECK(
+        (LENGTH(name) > 0) AND 
+        (INSTR(name, " ") = 0) AND 
+        (INSTR(name, "/") = 0)
+    )
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS POLICIES (
     "name" TEXT NOT NULL,
     "policy" TEXT NOT NULL,
     namespace_id TEXT NOT NULL REFERENCES NAMESPACES(id) ON DELETE CASCADE ON UPDATE CASCADE,
-    PRIMARY KEY(namespace_id, "name")
+    PRIMARY KEY(namespace_id, "name"),
+    CONSTRAINT VALID_NAME CHECK(
+        (LENGTH(name) > 0) AND 
+        (INSTR(name, " ") = 0) AND 
+        (INSTR(name, "/") = 0)
+    )
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS ENTITY_ALIASES (
