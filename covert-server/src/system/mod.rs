@@ -2,6 +2,7 @@ mod entity;
 mod initialize;
 mod lease;
 mod mount;
+mod namespace;
 mod policy;
 mod seal;
 mod status;
@@ -33,6 +34,7 @@ use self::{
         handle_lease_revocation_by_mount, handle_list_leases,
     },
     mount::{handle_mount, handle_mount_disable, handle_mounts_list, handle_update_mount},
+    namespace::{create_namespace_handler, delete_namespace_handler, list_namespaces_handler},
     policy::{handle_create_policy, handle_delete_policy, handle_list_policies},
     seal::handle_seal,
     status::handle_status,
@@ -144,6 +146,11 @@ pub fn new_system_backend(
         .route("/entity/policy/*name", update(handle_remove_entity_policy))
         .route("/entity/alias", update(handle_attach_entity_alias))
         .route("/entity/alias/*name", update(handle_remove_entity_alias))
+        .route(
+            "/namespaces",
+            create(create_namespace_handler).read(list_namespaces_handler),
+        )
+        .route("/namespaces/*name", delete(delete_namespace_handler))
         .layer(Extension(expiration_manager))
         .layer(Extension(router))
         .layer(Extension(repos))

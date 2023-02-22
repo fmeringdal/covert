@@ -1,5 +1,5 @@
 use clap::{Args, Subcommand};
-use covert_sdk::{status::CreatePolicyParams, Client};
+use covert_sdk::{policy::CreatePolicyParams, Client};
 
 use crate::handle_resp;
 

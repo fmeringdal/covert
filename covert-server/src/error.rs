@@ -74,6 +74,8 @@ pub enum ErrorType {
         #[source]
         error: sqlx::Error,
     },
+    #[error("Only the root namespace can call seal")]
+    SealInNonRootNamespace,
 }
 
 #[derive(Error, Debug)]
@@ -172,6 +174,7 @@ impl From<Error> for ApiError {
                 StatusCode::CONFLICT
             }
             ErrorType::ForeignKeyViolation { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+            ErrorType::SealInNonRootNamespace => StatusCode::FORBIDDEN,
         };
 
         ApiError {

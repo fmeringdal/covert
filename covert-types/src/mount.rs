@@ -28,4 +28,5 @@ pub struct MountEntry {
     pub path: String,
     pub config: MountConfig,
     pub backend_type: BackendType,
+    pub namespace_id: String,
 }

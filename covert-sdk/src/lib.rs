@@ -7,6 +7,7 @@ pub mod entity;
 pub mod kv;
 pub mod lease;
 pub mod mounts;
+pub mod namespace;
 pub mod operator;
 pub mod policy;
 pub mod psql;
@@ -24,6 +25,7 @@ pub struct Client {
     pub psql: crate::psql::Client,
     pub userpass: crate::userpass::Client,
     pub lease: crate::lease::Client,
+    pub namespace: crate::namespace::Client,
     base: Arc<BaseClient>,
 }
 
@@ -40,6 +42,7 @@ impl Client {
         let psql = crate::psql::Client::new(Arc::clone(&base_client));
         let userpass = crate::userpass::Client::new(Arc::clone(&base_client));
         let lease = crate::lease::Client::new(Arc::clone(&base_client));
+        let namespace = crate::namespace::Client::new(Arc::clone(&base_client));
 
         Self {
             entity,
@@ -51,11 +54,16 @@ impl Client {
             psql,
             userpass,
             lease,
+            namespace,
             base: base_client,
         }
     }
 
     pub async fn set_token(&self, token: Option<String>) {
         self.base.set_token(token).await
+    }
+
+    pub async fn set_namespace(&self, namespace: Option<String>) {
+        self.base.set_namespace(namespace).await
     }
 }

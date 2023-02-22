@@ -1,6 +1,6 @@
 mod common;
 
-use covert_sdk::status::CreatePolicyParams;
+use covert_sdk::policy::CreatePolicyParams;
 use covert_types::policy::{PathPolicy, Policy};
 
 use common::setup_unseal;
@@ -20,7 +20,7 @@ async fn policy() {
         }
     "#;
     let policies = PathPolicy::parse(policy_raw).unwrap();
-    let policy = Policy::new(name, policies);
+    let policy = Policy::new(name, policies, "foo".to_string());
 
     let created_policy = sdk
         .policy
@@ -32,5 +32,6 @@ async fn policy() {
         .unwrap()
         .policy;
 
-    assert_eq!(created_policy, policy);
+    assert_eq!(created_policy.name, policy.name);
+    assert_eq!(created_policy.paths, policy.paths);
 }

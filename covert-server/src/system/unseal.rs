@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::Utc;
 use covert_framework::extract::{Extension, Json};
 use covert_types::{
     entity::Entity,
@@ -9,10 +10,11 @@ use covert_types::{
     response::Response,
     token::Token,
 };
+use uuid::Uuid;
 
 use crate::{
     error::{Error, ErrorType},
-    repos::{token::TokenEntry, Repos},
+    repos::{namespace::Namespace, token::TokenEntry, Repos},
     ExpirationManager, Router,
 };
 
@@ -97,24 +99,33 @@ async fn unseal(
     master_key: String,
 ) -> Result<(), Error> {
     repos.pool.unseal(master_key)?;
-
     // Run migrations
     crate::migrations::migrate_ecrypted_db(repos.pool.as_ref()).await?;
 
-    let mounts = repos.mount.list().await?;
-    if mounts.is_empty() {
-        // TODO: Insert default KV backend
-    }
+    // TODO: seal pool again if anything below fails
 
+    // Setup root namespace
+    let ns = if let Some(ns) = repos.namespace.find_by_path(&["root".to_string()]).await? {
+        ns
+    } else {
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        repos.namespace.create(&ns).await?;
+        ns
+    };
+
+    let mounts = repos.mount.list(&ns.id).await?;
     for mount in mounts {
         mount_route_entry(
             repos,
             Arc::clone(&expiration_manager),
             Arc::clone(&router),
-            mount.path,
             mount.id,
             mount.backend_type,
-            mount.config,
+            &ns.id,
         )
         .await?;
     }
@@ -130,11 +141,17 @@ async fn unseal(
 }
 
 pub async fn generate_root_token(repos: &Repos) -> Result<Token, Error> {
+    let ns = repos
+        .namespace
+        .find_by_path(&["root".to_string()])
+        .await?
+        .ok_or_else(|| ErrorType::InternalError(anyhow::Error::msg("Missing root namespace")))?;
+
     // Generate root policy if not exist
     let policy = Policy::new(
         "root".into(),
         vec![PathPolicy {
-            path: "/".to_string(),
+            path: "*".to_string(),
             operations: vec![
                 Operation::Read,
                 Operation::Delete,
@@ -142,17 +159,27 @@ pub async fn generate_root_token(repos: &Repos) -> Result<Token, Error> {
                 Operation::Update,
             ],
         }],
+        ns.id.clone(),
     );
     let _res = repos.policy.create(&policy).await;
 
     // Generate root entity if not exist
-    let entity = Entity::new("root".into(), false);
+    let entity = Entity::new("root".into(), false, ns.id.clone());
     let _res = repos.entity.create(&entity).await;
 
     // Attach root policy to root entity
-    let _res = repos.entity.attach_policy(&entity.name, &policy.name).await;
+    let _res = repos
+        .entity
+        .attach_policy(&entity.name, &policy.name, &ns.id)
+        .await;
 
-    let te = TokenEntry::new_root();
+    let te = TokenEntry {
+        id: Token::new(),
+        entity_name: entity.name,
+        expires_at: None,
+        issued_at: Utc::now(),
+        namespace_id: ns.id.clone(),
+    };
     let token = te.id().clone();
     repos.token.create(&te).await?;
 

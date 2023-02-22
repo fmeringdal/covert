@@ -25,11 +25,12 @@ impl EntityRepo {
     #[tracing::instrument(skip(self))]
     pub async fn create(&self, entity: &Entity) -> Result<(), Error> {
         sqlx::query(
-            "INSERT INTO ENTITIES (name, disabled)
-            VALUES (?, ?)",
+            "INSERT INTO ENTITIES (name, disabled, namespace_id)
+            VALUES (?, ?, ?)",
         )
-        .bind(entity.name())
+        .bind(&entity.name)
         .bind(entity.disabled)
+        .bind(&entity.namespace_id)
         .execute(self.pool.as_ref())
         .await
         .map(|_| ())
@@ -37,14 +38,20 @@ impl EntityRepo {
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn attach_alias(&self, name: &str, alias: &EntityAlias) -> Result<(), Error> {
+    pub async fn attach_alias(
+        &self,
+        name: &str,
+        alias: &EntityAlias,
+        namespace_id: &str,
+    ) -> Result<(), Error> {
         sqlx::query(
-            "INSERT INTO ENTITY_ALIASES (name, mount_path, entity_name)
-            VALUES (?, ?, ?)",
+            "INSERT INTO ENTITY_ALIASES (name, mount_path, entity_name, namespace_id)
+            VALUES (?, ?, ?, ?)",
         )
         .bind(&alias.name)
         .bind(&alias.mount_path)
         .bind(name)
+        .bind(namespace_id)
         .execute(self.pool.as_ref())
         .await
         .map(|_| ())
@@ -52,13 +59,19 @@ impl EntityRepo {
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn attach_policy(&self, name: &str, policy: &str) -> Result<(), Error> {
+    pub async fn attach_policy(
+        &self,
+        name: &str,
+        policy: &str,
+        namespace_id: &str,
+    ) -> Result<(), Error> {
         sqlx::query(
-            "INSERT INTO ENTITY_POLICIES (entity_name, policy_name)
-            VALUES (?, ?)",
+            "INSERT INTO ENTITY_POLICIES (entity_name, policy_name, namespace_id)
+            VALUES (?, ?, ?)",
         )
         .bind(name)
         .bind(policy)
+        .bind(namespace_id)
         .execute(self.pool.as_ref())
         .await
         .map(|_| ())
@@ -66,13 +79,19 @@ impl EntityRepo {
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn remove_policy(&self, name: &str, policy: &str) -> Result<bool, Error> {
+    pub async fn remove_policy(
+        &self,
+        name: &str,
+        policy: &str,
+        namespace_id: &str,
+    ) -> Result<bool, Error> {
         sqlx::query(
             "DELETE FROM ENTITY_POLICIES WHERE
-                entity_name = ? AND policy_name = ?",
+                entity_name = ? AND policy_name = ? AND namespace_id = ?",
         )
         .bind(name)
         .bind(policy)
+        .bind(namespace_id)
         .execute(self.pool.as_ref())
         .await
         .map(|res| res.rows_affected() == 1)
@@ -80,14 +99,20 @@ impl EntityRepo {
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn remove_alias(&self, name: &str, alias: &EntityAlias) -> Result<bool, Error> {
+    pub async fn remove_alias(
+        &self,
+        name: &str,
+        alias: &EntityAlias,
+        namespace_id: &str,
+    ) -> Result<bool, Error> {
         sqlx::query(
             "DELETE FROM ENTITY_ALIASES WHERE
-                name = ? AND mount_path = ? AND entity_name = ?",
+                name = ? AND mount_path = ? AND entity_name = ? AND namespace_id = ?",
         )
         .bind(&alias.name)
         .bind(&alias.mount_path)
         .bind(name)
+        .bind(namespace_id)
         .execute(self.pool.as_ref())
         .await
         .map(|res| res.rows_affected() == 1)
@@ -98,14 +123,16 @@ impl EntityRepo {
     pub async fn get_entity_from_alias(
         &self,
         alias: &EntityAlias,
+        namespace_id: &str,
     ) -> Result<Option<Entity>, Error> {
         sqlx::query_as(
-            "SELECT E.name, E.disabled FROM ENTITY_ALIASES EA 
-                INNER JOIN ENTITIES E ON EA.entity_name = E.name
-                WHERE EA.name = ? AND EA.mount_path = ?",
+            "SELECT E.* FROM ENTITY_ALIASES EA 
+                INNER JOIN ENTITIES E ON EA.entity_name = E.name AND EA.namespace_id = E.namespace_id
+                WHERE EA.name = ? AND EA.mount_path = ? AND EA.namespace_id = ?",
         )
         .bind(&alias.name)
         .bind(&alias.mount_path)
+        .bind(namespace_id)
         .fetch_optional(self.pool.as_ref())
         .await
         .map_err(Into::into)
@@ -124,6 +151,7 @@ mod tests {
 
     use crate::repos::{
         mount::{tests::pool, MountRepo},
+        namespace::{Namespace, NamespaceRepo},
         policy::PolicyRepo,
     };
 
@@ -135,25 +163,35 @@ mod tests {
         let policy_repo = Arc::new(PolicyRepo::new(Arc::clone(&pool)));
         let entity_repo = EntityRepo::new(Arc::clone(&pool));
         let lease_repo = MountRepo::new(Arc::clone(&pool));
+        let ns_repo = NamespaceRepo::new(Arc::clone(&pool));
+
+        let ns = Namespace {
+            id: Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            parent_namespace_id: None,
+        };
+        ns_repo.create(&ns).await.unwrap();
 
         // Create some policies
         let foo_policy = Policy::new(
             "foo".into(),
             vec![PathPolicy::new("foo/".into(), vec![Operation::Read])],
+            ns.id.clone(),
         );
         policy_repo.create(&foo_policy).await.unwrap();
         let bar_policy = Policy::new(
             "bar".into(),
             vec![PathPolicy::new("bar/".into(), vec![Operation::Update])],
+            ns.id.clone(),
         );
         policy_repo.create(&bar_policy).await.unwrap();
 
-        let entity = Entity::new("John".into(), false);
+        let entity = Entity::new("John".into(), false, ns.id.clone());
         assert!(entity_repo.create(&entity).await.is_ok());
 
         // Attach "foo" policy to "John"
         assert!(entity_repo
-            .attach_policy(entity.name(), foo_policy.name())
+            .attach_policy(entity.name(), foo_policy.name(), &ns.id)
             .await
             .is_ok());
 
@@ -163,6 +201,7 @@ mod tests {
             backend_type: BackendType::Userpass,
             config: MountConfig::default(),
             path: "auth/".into(),
+            namespace_id: ns.id.clone(),
         };
         lease_repo.create(&userpass_mount).await.unwrap();
 
@@ -171,40 +210,46 @@ mod tests {
             mount_path: userpass_mount.path.clone(),
         };
         assert!(entity_repo
-            .attach_alias(entity.name(), &alias)
+            .attach_alias(entity.name(), &alias, &ns.id)
             .await
             .is_ok());
 
         // Lookup entity by alias
         assert_eq!(
-            entity_repo.get_entity_from_alias(&alias).await.unwrap(),
+            entity_repo
+                .get_entity_from_alias(&alias, &ns.id)
+                .await
+                .unwrap(),
             Some(entity.clone())
         );
 
         // Remove policy from entity
         assert!(entity_repo
-            .remove_policy(entity.name(), foo_policy.name())
+            .remove_policy(entity.name(), foo_policy.name(), &ns.id)
             .await
             .unwrap());
         // Remove again fails
         assert!(!entity_repo
-            .remove_policy(entity.name(), foo_policy.name())
+            .remove_policy(entity.name(), foo_policy.name(), &ns.id)
             .await
             .unwrap());
 
         // Remove alias from entity
         assert!(entity_repo
-            .remove_alias(entity.name(), &alias)
+            .remove_alias(entity.name(), &alias, &ns.id)
             .await
             .unwrap());
         // Remove again fails
         assert!(!entity_repo
-            .remove_alias(entity.name(), &alias)
+            .remove_alias(entity.name(), &alias, &ns.id)
             .await
             .unwrap());
         // Lookup entity by alias should now fail
         assert_eq!(
-            entity_repo.get_entity_from_alias(&alias).await.unwrap(),
+            entity_repo
+                .get_entity_from_alias(&alias, &ns.id)
+                .await
+                .unwrap(),
             None
         );
     }

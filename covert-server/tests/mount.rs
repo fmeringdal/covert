@@ -16,8 +16,7 @@ async fn mount() {
     // Initial mounts
     let mounts = sdk.mount.list().await.unwrap();
     assert_eq!(mounts.auth.len(), 0);
-    assert_eq!(mounts.secret.len(), 1);
-    assert_eq!(mounts.secret[0].variant, BackendType::System);
+    assert_eq!(mounts.secret.len(), 0);
 
     // Mount kv secret engine
     let mut mount_config = MountConfig {
@@ -37,10 +36,9 @@ async fn mount() {
 
     let mounts = sdk.mount.list().await.unwrap();
     assert_eq!(mounts.auth.len(), 0);
-    assert_eq!(mounts.secret.len(), 2);
+    assert_eq!(mounts.secret.len(), 1);
     assert_eq!(mounts.secret[0].variant, BackendType::Kv);
     assert_eq!(mounts.secret[0].config, mount_config);
-    assert_eq!(mounts.secret[1].variant, BackendType::System);
 
     // Mount again under conflicting path returns error
     assert!(sdk
@@ -68,17 +66,15 @@ async fn mount() {
         .unwrap();
     let mounts = sdk.mount.list().await.unwrap();
     assert_eq!(mounts.auth.len(), 0);
-    assert_eq!(mounts.secret.len(), 2);
+    assert_eq!(mounts.secret.len(), 1);
     assert_eq!(mounts.secret[0].variant, BackendType::Kv);
     assert_eq!(mounts.secret[0].config, mount_config);
-    assert_eq!(mounts.secret[1].variant, BackendType::System);
 
     // Disable mount
     sdk.mount.remove("kv/").await.unwrap();
     let mounts = sdk.mount.list().await.unwrap();
     assert_eq!(mounts.auth.len(), 0);
-    assert_eq!(mounts.secret.len(), 1);
-    assert_eq!(mounts.secret[0].variant, BackendType::System);
+    assert_eq!(mounts.secret.len(), 0);
 }
 
 #[tokio::test]
@@ -161,7 +157,7 @@ async fn recover_mounts_after_seal() {
 
     let mounts = sdk.mount.list().await.unwrap();
     assert_eq!(mounts.auth.len(), 0);
-    assert_eq!(mounts.secret.len(), 4);
+    assert_eq!(mounts.secret.len(), 3);
 
     // Seal
     sdk.operator.seal().await.unwrap();
@@ -182,5 +178,5 @@ async fn recover_mounts_after_seal() {
     assert_eq!(resp, Ok(StorageState::Unsealed));
     let mounts = sdk.mount.list().await.unwrap();
     assert_eq!(mounts.auth.len(), 0);
-    assert_eq!(mounts.secret.len(), 4);
+    assert_eq!(mounts.secret.len(), 3);
 }

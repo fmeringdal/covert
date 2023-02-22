@@ -4,6 +4,7 @@ mod auth;
 mod entity;
 mod kv;
 mod lease;
+mod namespace;
 mod operator;
 mod policy;
 mod psql;
@@ -18,6 +19,7 @@ use covert_sdk::Client;
 use entity::Entity;
 use kv::Kv;
 use lease::Leases;
+use namespace::Namespace;
 use operator::Operator;
 use policy::Policy;
 use psql::Psql;
@@ -64,6 +66,8 @@ enum Commands {
     Userpass(Userpass),
     #[command(about = "manage leases")]
     Lease(Leases),
+    #[command(alias = "ns", about = "manage namespaces")]
+    Namespace(Namespace),
 }
 
 #[tokio::main]
@@ -85,6 +89,7 @@ async fn main() {
         Commands::Psql(psql) => psql.handle(&sdk).await,
         Commands::Userpass(userpass) => userpass.handle(&sdk).await,
         Commands::Lease(lease) => lease.handle(&sdk).await,
+        Commands::Namespace(ns) => ns.handle(&sdk).await,
     }
 }
 

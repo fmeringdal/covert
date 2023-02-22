@@ -1,4 +1,5 @@
 mod entity;
+mod namespace;
 mod policy;
 
 use std::time::Duration;
@@ -13,6 +14,7 @@ use crate::{
     token::Token,
 };
 pub use entity::*;
+pub use namespace::*;
 pub use policy::*;
 
 #[derive(Debug, Serialize, Deserialize)]

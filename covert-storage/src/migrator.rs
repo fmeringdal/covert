@@ -166,10 +166,6 @@ pub fn migration_scripts<M: rust_embed::RustEmbed>() -> Result<Vec<MigrationScri
                     error: "Unable to parse migration script to UTF-8".to_string(),
                     filename: migration_file_name.to_string(),
                 })?;
-            let sql = snailquote::unescape(&sql).map_err(|_| MigrationError::Script {
-                error: "Unable to unescape content in migration script".to_string(),
-                filename: migration_file_name.to_string(),
-            })?;
             migration_scripts.push(MigrationScript {
                 description: migration_file_name.to_string(),
                 script: sql,

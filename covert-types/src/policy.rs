@@ -10,12 +10,17 @@ use crate::{error::ApiError, request::Operation};
 pub struct Policy {
     pub name: String,
     pub paths: Vec<PathPolicy>,
+    pub namespace_id: String,
 }
 
 impl Policy {
     #[must_use]
-    pub fn new(name: String, paths: Vec<PathPolicy>) -> Self {
-        Self { name, paths }
+    pub fn new(name: String, paths: Vec<PathPolicy>, namespace_id: String) -> Self {
+        Self {
+            name,
+            paths,
+            namespace_id,
+        }
     }
 
     #[must_use]
