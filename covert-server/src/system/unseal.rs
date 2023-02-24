@@ -164,7 +164,7 @@ pub async fn generate_root_token(repos: &Repos) -> Result<Token, Error> {
     let _res = repos.policy.create(&policy).await;
 
     // Generate root entity if not exist
-    let entity = Entity::new("root".into(), false, ns.id.clone());
+    let entity = Entity::new("root".into(), ns.id.clone());
     let _res = repos.entity.create(&entity).await;
 
     // Attach root policy to root entity

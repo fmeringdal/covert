@@ -24,7 +24,6 @@ pub async fn handle_entity_create(
     let entity = Entity {
         name: params.name,
         namespace_id: ns.id.clone(),
-        disabled: false,
     };
     repos.entity.create(&entity).await?;
 

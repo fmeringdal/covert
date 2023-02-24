@@ -162,7 +162,7 @@ mod tests {
         // Create entity and policy
         let entity = Entity {
             name: "foo".to_string(),
-            disabled: false,
+
             namespace_id: ns.id.clone(),
         };
         repos.entity.create(&entity).await.unwrap();
@@ -229,7 +229,7 @@ mod tests {
         // Create entity and policy
         let entity = Entity {
             name: "foo".to_string(),
-            disabled: false,
+
             namespace_id: ns.id.clone(),
         };
         repos.entity.create(&entity).await.unwrap();
@@ -330,7 +330,7 @@ mod tests {
         // Create entity and policy
         let entity = Entity {
             name: "foo".to_string(),
-            disabled: false,
+
             namespace_id: ns.id.clone(),
         };
         repos.entity.create(&entity).await.unwrap();
@@ -418,7 +418,7 @@ mod tests {
         // Create entity and policy in foo ns
         let entity = Entity {
             name: "foo".to_string(),
-            disabled: false,
+
             namespace_id: foo_ns.id.clone(),
         };
         repos.entity.create(&entity).await.unwrap();
@@ -505,7 +505,7 @@ mod tests {
         // Create entity and policy in root ns
         let entity = Entity {
             name: "foo".to_string(),
-            disabled: false,
+
             namespace_id: ns.id.clone(),
         };
         repos.entity.create(&entity).await.unwrap();
@@ -604,7 +604,6 @@ mod tests {
         // Create entity and policy in root ns
         let entity = Entity {
             name: "f-root".to_string(),
-            disabled: false,
             namespace_id: f_ns.id.clone(),
         };
         repos.entity.create(&entity).await.unwrap();

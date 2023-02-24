@@ -25,11 +25,10 @@ impl EntityRepo {
     #[tracing::instrument(skip(self))]
     pub async fn create(&self, entity: &Entity) -> Result<(), Error> {
         sqlx::query(
-            "INSERT INTO ENTITIES (name, disabled, namespace_id)
-            VALUES (?, ?, ?)",
+            "INSERT INTO ENTITIES (name, namespace_id)
+            VALUES (?, ?)",
         )
         .bind(&entity.name)
-        .bind(entity.disabled)
         .bind(&entity.namespace_id)
         .execute(self.pool.as_ref())
         .await
@@ -186,7 +185,7 @@ mod tests {
         );
         policy_repo.create(&bar_policy).await.unwrap();
 
-        let entity = Entity::new("John".into(), false, ns.id.clone());
+        let entity = Entity::new("John".into(), ns.id.clone());
         assert!(entity_repo.create(&entity).await.is_ok());
 
         // Attach "foo" policy to "John"

@@ -167,7 +167,7 @@ pub async fn remove_mount(
     expiration_manager
         .revoke_leases_by_mount_prefix(path, namespace_id)
         .await?;
-    if !router.remove(me.id).await {
+    if !router.remove(me.id) {
         return Err(ErrorType::MountNotFound { path: path.into() }.into());
     }
     repos.mount.remove_by_path(path, namespace_id).await?;
@@ -223,7 +223,7 @@ pub async fn mount_route_entry(
         .await?,
     );
 
-    router.mount(id, Arc::clone(&backend)).await;
+    router.mount(id, Arc::clone(&backend));
 
     Ok((backend, prefix))
 }

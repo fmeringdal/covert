@@ -40,13 +40,13 @@ async fn seal(
     expiration_manager.stop().await;
 
     // Clear all the route entries except system
-    let system = router.get_system_mount().await.ok_or_else(|| {
+    let system = router.get_system_mount().ok_or_else(|| {
         ErrorType::InternalError(anyhow::Error::msg(
             "router does not contain the system backend",
         ))
     })?;
-    router.clear_mounts().await;
-    router.mount_system(system).await;
+    router.clear_mounts();
+    router.mount_system(system);
 
     Ok(())
 }

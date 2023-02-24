@@ -82,7 +82,7 @@ pub async fn start(
 
     // Mount system backend
     let system = new_system_backend(repos.clone(), Arc::clone(&router), Arc::clone(&expiration));
-    router.mount_system(Arc::new(system)).await;
+    router.mount_system(Arc::new(system));
 
     let server_router_svc = ServiceBuilder::new()
         .concurrency_limit(1000)

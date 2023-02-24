@@ -17,5 +17,4 @@ async fn entity() {
         .entity;
 
     assert_eq!(entity.name, name);
-    assert!(!entity.disabled);
 }

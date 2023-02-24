@@ -379,7 +379,7 @@ mod tests {
         };
         repos.mount.create(&mount).await.unwrap();
 
-        let entity = Entity::new("foo".to_string(), false, ns.id.clone());
+        let entity = Entity::new("foo".to_string(), ns.id.clone());
         repos.entity.create(&entity).await.unwrap();
         repos
             .entity

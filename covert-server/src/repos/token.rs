@@ -173,7 +173,7 @@ mod tests {
         );
         policy_repo.create(&bar_policy).await.unwrap();
 
-        let entity = Entity::new("John".into(), false, ns.id.clone());
+        let entity = Entity::new("John".into(), ns.id.clone());
         entity_repo.create(&entity).await.unwrap();
         entity_repo
             .attach_policy(entity.name(), foo_policy.name(), &ns.id)
@@ -230,7 +230,7 @@ mod tests {
         );
         policy_repo.create(&bar_policy).await.unwrap();
 
-        let entity = Entity::new("John".into(), false, ns.id.clone());
+        let entity = Entity::new("John".into(), ns.id.clone());
         entity_repo.create(&entity).await.unwrap();
         entity_repo
             .attach_policy(entity.name(), foo_policy.name(), &ns.id)

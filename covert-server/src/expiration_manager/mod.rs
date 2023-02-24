@@ -643,7 +643,7 @@ mod tests {
             handler,
         });
 
-        router.mount(me.id, Arc::clone(&backend)).await;
+        router.mount(me.id, Arc::clone(&backend));
 
         let ttl = Duration::hours(4);
         let le = LeaseEntry::new(
@@ -738,7 +738,7 @@ mod tests {
             variant: me.backend_type,
             handler,
         });
-        router.mount_system(backend).await;
+        router.mount_system(backend);
 
         let ttl = Duration::hours(4);
         let le = LeaseEntry::new(
@@ -831,7 +831,7 @@ mod tests {
             variant: me.backend_type,
             handler,
         });
-        router.mount_system(backend).await;
+        router.mount_system(backend);
 
         let ttl = Duration::hours(4);
         let le = LeaseEntry::new(
@@ -934,7 +934,7 @@ mod tests {
             handler,
         });
 
-        router.mount(me.id, Arc::clone(&backend)).await;
+        router.mount(me.id, Arc::clone(&backend));
 
         let ttl = Duration::hours(4);
         let le = LeaseEntry::new(
@@ -1058,7 +1058,7 @@ mod tests {
             handler,
         });
 
-        router.mount(me.id, Arc::clone(&backend)).await;
+        router.mount(me.id, Arc::clone(&backend));
 
         let ttl = Duration::hours(4);
         let le = LeaseEntry::new(
@@ -1144,7 +1144,7 @@ mod tests {
             handler,
         });
 
-        router.mount(me.id, Arc::clone(&backend)).await;
+        router.mount(me.id, Arc::clone(&backend));
 
         let ttl = Duration::hours(4);
         let lease_count = 50;
@@ -1242,7 +1242,7 @@ mod tests {
             handler,
         });
 
-        router.mount(me.id, Arc::clone(&backend)).await;
+        router.mount(me.id, Arc::clone(&backend));
 
         let ttl = Duration::hours(4);
         let fast_lease_revocation_time = clock.now() + ttl;
