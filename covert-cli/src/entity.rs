@@ -54,6 +54,8 @@ pub enum EntitySubcommand {
         #[arg(short, long)]
         path: String,
     },
+    #[command(about = "list entities", alias = "ls")]
+    List,
 }
 
 impl Entity {
@@ -111,6 +113,10 @@ impl Entity {
                         },
                     )
                     .await;
+                handle_resp(resp);
+            }
+            EntitySubcommand::List => {
+                let resp = sdk.entity.list().await;
                 handle_resp(resp);
             }
         }

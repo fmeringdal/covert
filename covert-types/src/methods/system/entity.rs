@@ -53,3 +53,15 @@ pub struct RemoveEntityAliasParams {
 pub struct RemoveEntityAliasResponse {
     pub alias: EntityAlias,
 }
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ListEntitiesResponse {
+    pub entities: Vec<ListEntitiesResponseItem>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ListEntitiesResponseItem {
+    pub name: String,
+    pub policies: Vec<String>,
+    pub aliases: Vec<EntityAlias>,
+}

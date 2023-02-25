@@ -26,7 +26,7 @@ use crate::{repos::Repos, ExpirationManager};
 use self::{
     entity::{
         handle_attach_entity_alias, handle_attach_entity_policy, handle_entity_create,
-        handle_remove_entity_alias, handle_remove_entity_policy,
+        handle_list_entities, handle_remove_entity_alias, handle_remove_entity_policy,
     },
     initialize::handle_initialize,
     lease::{
@@ -141,7 +141,10 @@ pub fn new_system_backend(
             update(handle_lease_revocation_by_mount),
         )
         .route("/leases/lookup-mount/*prefix", read(handle_list_leases))
-        .route("/entity", create(handle_entity_create))
+        .route(
+            "/entity",
+            create(handle_entity_create).read(handle_list_entities),
+        )
         .route("/entity/policy", update(handle_attach_entity_policy))
         .route("/entity/policy/*name", update(handle_remove_entity_policy))
         .route("/entity/alias", update(handle_attach_entity_alias))

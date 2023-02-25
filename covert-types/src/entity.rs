@@ -20,7 +20,7 @@ impl Entity {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct EntityAlias {
     pub name: String,
     pub mount_path: String,

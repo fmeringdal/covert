@@ -24,6 +24,7 @@ hex = "0.4"
 humantime-serde = "1.1"
 http-body = "0.4"
 hyper = { version = "0.14", features = ["full"] }
+itertools = "0.10"
 rand = "0.8"
 rust-embed = "6.4"
 serde = { version = "1.0", features = ["derive"] }

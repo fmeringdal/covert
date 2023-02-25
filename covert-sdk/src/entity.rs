@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 pub use covert_types::entity::EntityAlias;
+use covert_types::methods::system::ListEntitiesResponse;
 pub use covert_types::methods::system::{
     AttachEntityAliasParams, AttachEntityAliasResponse, AttachEntityPolicyParams,
     AttachEntityPolicyResponse, CreateEntityParams, CreateEntityResponse, RemoveEntityAliasParams,
@@ -57,5 +58,9 @@ impl Client {
         self.client
             .put(format!("/sys/entity/alias/{name}"), params)
             .await
+    }
+
+    pub async fn list(&self) -> Result<ListEntitiesResponse, String> {
+        self.client.get("/sys/entity".into()).await
     }
 }

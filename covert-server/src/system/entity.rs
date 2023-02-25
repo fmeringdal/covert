@@ -3,9 +3,9 @@ use covert_types::{
     entity::Entity,
     methods::system::{
         AttachEntityAliasParams, AttachEntityAliasResponse, AttachEntityPolicyParams,
-        AttachEntityPolicyResponse, CreateEntityParams, CreateEntityResponse,
-        RemoveEntityAliasParams, RemoveEntityAliasResponse, RemoveEntityPolicyParams,
-        RemoveEntityPolicyResponse,
+        AttachEntityPolicyResponse, CreateEntityParams, CreateEntityResponse, ListEntitiesResponse,
+        ListEntitiesResponseItem, RemoveEntityAliasParams, RemoveEntityAliasResponse,
+        RemoveEntityPolicyParams, RemoveEntityPolicyResponse,
     },
     response::Response,
 };
@@ -155,6 +155,26 @@ pub async fn handle_remove_entity_alias(
 
     let resp = RemoveEntityAliasResponse {
         alias: params.alias,
+    };
+    Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
+}
+
+#[tracing::instrument(skip(repos))]
+pub async fn handle_list_entities(
+    Extension(repos): Extension<Repos>,
+    Extension(ns): Extension<Namespace>,
+) -> Result<Response, Error> {
+    let entities = repos.entity.list(&ns.id).await?;
+
+    let resp = ListEntitiesResponse {
+        entities: entities
+            .into_iter()
+            .map(|e| ListEntitiesResponseItem {
+                name: e.name,
+                policies: e.policies,
+                aliases: e.aliases,
+            })
+            .collect(),
     };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }

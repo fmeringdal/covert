@@ -56,7 +56,12 @@ CREATE TABLE IF NOT EXISTS ENTITY_ALIASES (
     CONSTRAINT FK_MOUNT
         FOREIGN KEY (namespace_id, mount_path)
         REFERENCES MOUNTS (namespace_id, "path")
-        ON DELETE CASCADE ON UPDATE CASCADE
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT VALID_ALIAS_NAME CHECK(
+        (LENGTH(name) > 0) AND 
+        (INSTR(name, " ") = 0) AND 
+        (INSTR(name, "/") = 0)
+    )
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS ENTITY_POLICIES (
