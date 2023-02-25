@@ -3,9 +3,9 @@ use covert_types::{
     entity::Entity,
     methods::system::{
         AttachEntityAliasParams, AttachEntityAliasResponse, AttachEntityPolicyParams,
-        AttachEntityPolicyResponse, CreateEntityParams, CreateEntityResponse, ListEntitiesResponse,
-        ListEntitiesResponseItem, RemoveEntityAliasParams, RemoveEntityAliasResponse,
-        RemoveEntityPolicyParams, RemoveEntityPolicyResponse,
+        AttachEntityPolicyResponse, CreateEntityParams, CreateEntityResponse,
+        EntityWithPolicyAndAlias, ListEntitiesResponse, RemoveEntityAliasParams,
+        RemoveEntityAliasResponse, RemoveEntityPolicyParams, RemoveEntityPolicyResponse,
     },
     response::Response,
 };
@@ -27,7 +27,13 @@ pub async fn handle_entity_create(
     };
     repos.entity.create(&entity).await?;
 
-    let resp = CreateEntityResponse { entity };
+    let resp = CreateEntityResponse {
+        entity: EntityWithPolicyAndAlias {
+            name: entity.name,
+            policies: vec![],
+            aliases: vec![],
+        },
+    };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
@@ -77,9 +83,8 @@ pub async fn handle_attach_entity_policy(
         attached_policies.push(policy.to_string());
     }
 
-    let resp = AttachEntityPolicyResponse {
-        policy_names: attached_policies,
-    };
+    let entity = lookup_entity(&repos, &params.name, &ns.id).await?;
+    let resp = AttachEntityPolicyResponse { entity };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
@@ -103,9 +108,8 @@ pub async fn handle_attach_entity_alias(
         attached_aliases.push(alias.clone());
     }
 
-    let resp = AttachEntityAliasResponse {
-        aliases: attached_aliases,
-    };
+    let entity = lookup_entity(&repos, &params.name, &ns.id).await?;
+    let resp = AttachEntityAliasResponse { entity };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
@@ -128,9 +132,8 @@ pub async fn handle_remove_entity_policy(
         .into());
     }
 
-    let resp = RemoveEntityPolicyResponse {
-        policy_name: params.policy_name,
-    };
+    let entity = lookup_entity(&repos, &name, &ns.id).await?;
+    let resp = RemoveEntityPolicyResponse { entity };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
@@ -153,9 +156,8 @@ pub async fn handle_remove_entity_alias(
         .into());
     }
 
-    let resp = RemoveEntityAliasResponse {
-        alias: params.alias,
-    };
+    let entity = lookup_entity(&repos, &name, &ns.id).await?;
+    let resp = RemoveEntityAliasResponse { entity };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
@@ -169,7 +171,7 @@ pub async fn handle_list_entities(
     let resp = ListEntitiesResponse {
         entities: entities
             .into_iter()
-            .map(|e| ListEntitiesResponseItem {
+            .map(|e| EntityWithPolicyAndAlias {
                 name: e.name,
                 policies: e.policies,
                 aliases: e.aliases,
@@ -177,4 +179,25 @@ pub async fn handle_list_entities(
             .collect(),
     };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
+}
+
+async fn lookup_entity(
+    repos: &Repos,
+    name: &str,
+    namespace_id: &str,
+) -> Result<EntityWithPolicyAndAlias, Error> {
+    let entity = repos
+        .entity
+        .lookup(name, namespace_id)
+        .await?
+        .ok_or_else(|| {
+            ErrorType::InternalError(anyhow::Error::msg(
+                "Failed to lookup entity after modification",
+            ))
+        })?;
+    Ok(EntityWithPolicyAndAlias {
+        name: entity.name,
+        policies: entity.policies,
+        aliases: entity.aliases,
+    })
 }

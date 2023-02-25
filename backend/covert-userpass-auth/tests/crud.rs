@@ -51,7 +51,7 @@ async fn crud() {
         })
         .await
         .unwrap();
-    assert_eq!(resp.aliases.len(), 1);
+    assert_eq!(resp.entity.aliases.len(), 1);
 
     let resp = sdk.userpass.list(MOUNT_PATH).await.unwrap();
     assert_eq!(

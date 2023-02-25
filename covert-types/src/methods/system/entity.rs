@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::entity::{Entity, EntityAlias};
+use crate::entity::EntityAlias;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CreateEntityParams {
@@ -9,7 +9,7 @@ pub struct CreateEntityParams {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CreateEntityResponse {
-    pub entity: Entity,
+    pub entity: EntityWithPolicyAndAlias,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -20,7 +20,7 @@ pub struct AttachEntityPolicyParams {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AttachEntityPolicyResponse {
-    pub policy_names: Vec<String>,
+    pub entity: EntityWithPolicyAndAlias,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -31,7 +31,7 @@ pub struct AttachEntityAliasParams {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AttachEntityAliasResponse {
-    pub aliases: Vec<EntityAlias>,
+    pub entity: EntityWithPolicyAndAlias,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -41,7 +41,7 @@ pub struct RemoveEntityPolicyParams {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RemoveEntityPolicyResponse {
-    pub policy_name: String,
+    pub entity: EntityWithPolicyAndAlias,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -51,16 +51,16 @@ pub struct RemoveEntityAliasParams {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RemoveEntityAliasResponse {
-    pub alias: EntityAlias,
+    pub entity: EntityWithPolicyAndAlias,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ListEntitiesResponse {
-    pub entities: Vec<ListEntitiesResponseItem>,
+    pub entities: Vec<EntityWithPolicyAndAlias>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct ListEntitiesResponseItem {
+pub struct EntityWithPolicyAndAlias {
     pub name: String,
     pub policies: Vec<String>,
     pub aliases: Vec<EntityAlias>,
