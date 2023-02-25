@@ -4,6 +4,8 @@ use sqlx::Executor;
 use crate::scoped_queries::ScopedQuery;
 use crate::{BackendStoragePool, EncryptedPool};
 
+const BACKEND_MIGRATIONS_TABLE: &str = "_BACKEND_STORAGE_MIGRATIONS";
+
 #[derive(Debug)]
 pub struct MigrationScript {
     pub script: String,
@@ -12,15 +14,17 @@ pub struct MigrationScript {
 
 async fn create_migrate_table(pool: &EncryptedPool) -> Result<(), sqlx::Error> {
     // TODO: is mount_id here the correct type?
-    let sql = r#"CREATE TABLE IF NOT EXISTS _backend_storage_migrations(
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {BACKEND_MIGRATIONS_TABLE}(
         mount_id INTEGER NOT NULL REFERENCES MOUNTS(id) ON DELETE CASCADE ON UPDATE CASCADE,
         version INTEGER NOT NULL,
         description TEXT NOT NULL,
         checksum BLOB NOT NULL,
         created_at TIMESTAMP NOT NULL,
         PRIMARY KEY(mount_id, version)
-    )"#;
-    sqlx::query(sql).execute(pool).await?;
+    )"
+    );
+    sqlx::query(&sql).execute(pool).await?;
     Ok(())
 }
 
@@ -63,10 +67,10 @@ pub async fn migrate(
 ) -> Result<(), MigrationError> {
     create_migrate_table(pool).await?;
 
-    let latest_migration: Option<LatestMigration> = sqlx::query_as(
-        "SELECT MAX(version) AS latest_version FROM _backend_storage_migrations 
-        WHERE mount_id = ?",
-    )
+    let latest_migration: Option<LatestMigration> = sqlx::query_as(&format!(
+        "SELECT MAX(version) AS latest_version FROM {BACKEND_MIGRATIONS_TABLE} 
+        WHERE mount_id = ?"
+    ))
     .bind(mount_id)
     .fetch_optional(pool)
     .await?;
@@ -86,8 +90,8 @@ pub async fn migrate(
         let mut tx = pool.begin().await?;
 
         // Try to add new migration version for backend
-        sqlx::query(
-            "INSERT INTO _backend_storage_migrations (
+        sqlx::query(&format!(
+            "INSERT INTO {BACKEND_MIGRATIONS_TABLE} (
         mount_id,
         version,
         description,
@@ -99,8 +103,8 @@ pub async fn migrate(
         ?,
         ?,
         ?
-    )",
-        )
+    )"
+        ))
         .bind(mount_id)
         .bind(version as i64)
         .bind(&migration.description)
@@ -199,10 +203,12 @@ pub async fn list_migrations(
     pool: &EncryptedPool,
     mount_id: &str,
 ) -> Result<Vec<Migration>, sqlx::Error> {
-    sqlx::query_as("SELECT * FROM _backend_storage_migrations WHERE mount_id = ?")
-        .bind(mount_id)
-        .fetch_all(pool)
-        .await
+    sqlx::query_as(&format!(
+        "SELECT * FROM {BACKEND_MIGRATIONS_TABLE} WHERE mount_id = ?"
+    ))
+    .bind(mount_id)
+    .fetch_all(pool)
+    .await
 }
 
 #[cfg(test)]
@@ -280,10 +286,11 @@ CREATE TABLE IF NOT EXISTS USERS (
         ];
         migrate(&pool, &migrations, mount_id, prefix).await.unwrap();
 
-        let res: Vec<Migration> = sqlx::query_as("SELECT * FROM _backend_storage_migrations")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
+        let res: Vec<Migration> =
+            sqlx::query_as(&format!("SELECT * FROM {BACKEND_MIGRATIONS_TABLE}"))
+                .fetch_all(&pool)
+                .await
+                .unwrap();
         assert_eq!(res.len(), 2);
 
         migrations.push(MigrationScript {
@@ -296,10 +303,11 @@ ALTER TABLE USERS
         });
         migrate(&pool, &migrations, mount_id, prefix).await.unwrap();
 
-        let res: Vec<Migration> = sqlx::query_as("SELECT * FROM _backend_storage_migrations")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
+        let res: Vec<Migration> =
+            sqlx::query_as(&format!("SELECT * FROM {BACKEND_MIGRATIONS_TABLE}"))
+                .fetch_all(&pool)
+                .await
+                .unwrap();
         assert_eq!(res.len(), 3);
 
         // Run again and nothing should change
@@ -319,7 +327,7 @@ ALTER TABLE USERS
                     name: "MOUNTS".to_string()
                 },
                 Tables {
-                    name: "_backend_storage_migrations".to_string()
+                    name: BACKEND_MIGRATIONS_TABLE.to_string()
                 },
                 // Tables from migrations
                 Tables {

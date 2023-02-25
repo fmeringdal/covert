@@ -1,8 +1,9 @@
 use std::path::Path;
 
 use covert_types::state::StorageState;
-use futures::Stream;
+use futures::{future::BoxFuture, Stream};
 use sqlx::{
+    pool::PoolConnection,
     sqlite::{SqliteQueryResult, SqliteRow},
     Pool, Sqlite, Transaction,
 };
@@ -105,6 +106,28 @@ impl<'c> sqlx::Executor<'c> for &EncryptedPool {
             Err(err) => return Box::pin(async { Err(err) }),
         };
         pool.describe(sql)
+    }
+}
+
+impl<'c> sqlx::Acquire<'c> for &EncryptedPool {
+    type Database = Sqlite;
+
+    type Connection = PoolConnection<Sqlite>;
+
+    fn acquire(self) -> BoxFuture<'c, Result<Self::Connection, sqlx::Error>> {
+        let pool = match self.pool() {
+            Ok(p) => p,
+            Err(err) => return Box::pin(async { Err(err) }),
+        };
+        Box::pin(pool.acquire())
+    }
+
+    fn begin(self) -> BoxFuture<'c, Result<Transaction<'c, Self::Database>, sqlx::Error>> {
+        let pool = match self.pool() {
+            Ok(p) => p,
+            Err(err) => return Box::pin(async { Err(err) }),
+        };
+        Box::pin(async move { pool.begin().await })
     }
 }
 
