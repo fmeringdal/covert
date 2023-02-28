@@ -20,21 +20,47 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+      - name: Start minio
+        run: |
+          docker run -d \
+                    -p 9000:9000 \
+                    --name minio \
+                    minio/minio server /data
+
+          sleep 5
+
+          # Create bucket
+          docker run --rm --link minio -e MINIO_BUCKET=mybkt --entrypoint sh minio/mc -c "\
+              mc config host add myminio http://minio:9000 minioadmin minioadmin && \
+              mc rm -r --force myminio/\$MINIO_BUCKET || true && \
+              mc mb myminio/\$MINIO_BUCKET
+            "
+      - name: Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: '^1.19.1'
+      - name: Install Litestream
+        run: |
+          git clone https://github.com/fmeringdal/litestream.git
+          cd litestream 
+          go install -tags sqlcipher ./cmd/litestream
+          cd .. 
+          litestream version
       - uses: actions-rs/cargo@v1
         name: Format
         with:
           command: fmt
           args: --all --check
       - uses: actions-rs/cargo@v1
-        name: Clippy
-        with:
-          command: clippy
-          args: --all --all-targets --all-features  --  -D warnings
-      - uses: actions-rs/cargo@v1
         name: Test
         with:
           command: test
           args: --all --all-targets --all-features
+      - uses: actions-rs/cargo@v1
+        name: Clippy
+        with:
+          command: clippy
+          args: --all --all-targets --all-features  --  -D warnings
       - uses: actions-rs/cargo@v1
         name: Build
         with:

@@ -7,13 +7,13 @@ use covert_types::{
 };
 
 use crate::{
+    context::Context,
     error::{Error, ErrorType},
-    repos::{seal::SealConfig, Repos},
+    repos::seal::SealConfig,
 };
 
-#[allow(clippy::unused_async)]
 pub async fn handle_initialize(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Json(body): Json<InitializeParams>,
 ) -> Result<Response, Error> {
     // Sanity check params before making real master key
@@ -21,7 +21,7 @@ pub async fn handle_initialize(
         return Err(ErrorType::InvalidInitializeParams.into());
     }
 
-    repos
+    ctx.repos
         .seal
         .set_config(&SealConfig {
             shares: body.shares,
@@ -29,7 +29,7 @@ pub async fn handle_initialize(
         })
         .await?;
 
-    if let Some(master_key) = repos.pool.initialize()? {
+    if let Some(master_key) = ctx.repos.pool.initialize()? {
         let sharks = sharks::Sharks(body.threshold);
         let key_shares = sharks
             .dealer(master_key.as_bytes())

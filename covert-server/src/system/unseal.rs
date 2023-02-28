@@ -10,40 +10,40 @@ use covert_types::{
     response::Response,
     token::Token,
 };
+use tracing::error;
 use uuid::Uuid;
 
 use crate::{
+    context::Context,
     error::{Error, ErrorType},
+    recovery::replicate,
     repos::{namespace::Namespace, token::TokenEntry, Repos},
-    ExpirationManager, Router,
 };
 
 use super::mount::mount_route_entry;
 
 pub async fn handle_unseal(
-    Extension(repos): Extension<Repos>,
-    Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
-    Extension(router): Extension<Arc<Router>>,
+    Extension(ctx): Extension<Context>,
     Json(body): Json<UnsealParams>,
 ) -> Result<Response, Error> {
-    let seal_config = repos.seal.get_config().await?.ok_or_else(|| {
+    let seal_config = ctx.repos.seal.get_config().await?.ok_or_else(|| {
         ErrorType::InternalError(anyhow::Error::msg(
             "Seal config was not found when unseal handler was called",
         ))
     })?;
 
     for key in body.shares {
-        repos.seal.insert_key_share(key.as_bytes()).await?;
+        ctx.repos.seal.insert_key_share(key.as_bytes()).await?;
     }
 
-    let Ok(shares) = repos
+    let Ok(shares) = ctx.repos
         .seal
         .get_key_shares()
         .await?
         .into_iter()
         .map(|k| String::from_utf8(k.key))
         .collect::<Result<Vec<_>, _>>() else {
-            repos.seal.clear_key_shares().await?;
+            ctx.repos.seal.clear_key_shares().await?;
             return Err(ErrorType::BadData("Invalid share key found".into()).into());
         };
 
@@ -58,15 +58,15 @@ pub async fn handle_unseal(
     }
 
     let Ok(master_key) = construct_master_key(&shares, seal_config.threshold) else {
-        repos.seal.clear_key_shares().await?;
+        ctx.repos.seal.clear_key_shares().await?;
         return Err(ErrorType::BadData("Unable to construct master key from key shares".into()).into());
     };
     // No longer needed so just clear them
-    repos.seal.clear_key_shares().await?;
+    ctx.repos.seal.clear_key_shares().await?;
 
-    unseal(&repos, expiration_manager, router, master_key).await?;
+    unseal(&ctx, master_key).await?;
 
-    let root_token = generate_root_token(&repos).await?;
+    let root_token = generate_root_token(&ctx.repos).await?;
 
     let resp = UnsealResponse::Complete { root_token };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
@@ -92,20 +92,52 @@ fn construct_master_key(key_shares: &[String], threshold: u8) -> Result<String, 
     Ok(master_key)
 }
 
-async fn unseal(
-    repos: &Repos,
-    expiration_manager: Arc<ExpirationManager>,
-    router: Arc<Router>,
-    master_key: String,
-) -> Result<(), Error> {
-    repos.pool.unseal(master_key)?;
-    // Run migrations
-    crate::migrations::migrate_ecrypted_db(repos.pool.as_ref()).await?;
+async fn unseal(ctx: &Context, master_key: String) -> Result<(), Error> {
+    ctx.repos.pool.unseal(master_key.clone())?;
+
+    // Clear all shares now that master key is constructed
+    ctx.repos.seal.clear_key_shares().await?;
 
     // TODO: seal pool again if anything below fails
 
+    // Try to recover encrypted storage if replication has not already started.
+    // Replication could have already started if sealed and then unsealed again.
+    let encrypted_storage_replication_started = ctx
+        .child_processes
+        .encrypted_storage_replication_started()
+        .await;
+    if let (Some(replication), false) = (
+        ctx.config.replication.as_ref(),
+        encrypted_storage_replication_started,
+    ) {
+        // Setup replication
+        match replicate(
+            replication,
+            Some(master_key.clone()),
+            &ctx.config.encrypted_storage_path(),
+            &replication.encrypted_bucket_url(),
+        ) {
+            Ok(p) => {
+                ctx.child_processes
+                    .set_encrypted_storage_replication(p)
+                    .await;
+            }
+            Err(err) => {
+                error!(?err, "Failed to setup replication");
+            }
+        }
+    }
+
+    // Run migrations
+    crate::migrations::migrate_ecrypted_db(ctx.repos.pool.as_ref()).await?;
+
     // Setup root namespace
-    let ns = if let Some(ns) = repos.namespace.find_by_path(&["root".to_string()]).await? {
+    let ns = if let Some(ns) = ctx
+        .repos
+        .namespace
+        .find_by_path(&["root".to_string()])
+        .await?
+    {
         ns
     } else {
         let ns = Namespace {
@@ -113,24 +145,17 @@ async fn unseal(
             name: "root".to_string(),
             parent_namespace_id: None,
         };
-        repos.namespace.create(&ns).await?;
+        ctx.repos.namespace.create(&ns).await?;
         ns
     };
 
-    let mounts = repos.mount.list(&ns.id).await?;
+    let mounts = ctx.repos.mount.list(&ns.id).await?;
     for mount in mounts {
-        mount_route_entry(
-            repos,
-            Arc::clone(&expiration_manager),
-            Arc::clone(&router),
-            mount.id,
-            mount.backend_type,
-            &ns.id,
-        )
-        .await?;
+        mount_route_entry(ctx, mount.id, mount.backend_type, &ns.id).await?;
     }
 
     // Start expiration manager
+    let expiration_manager = Arc::clone(&ctx.expiration_manager);
     tokio::spawn(async move {
         if expiration_manager.start().await.is_err() {
             // TODO: stop the server

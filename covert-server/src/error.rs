@@ -76,6 +76,11 @@ pub enum ErrorType {
     },
     #[error("Only the root namespace can call seal")]
     SealInNonRootNamespace,
+    #[error("Failed to restore backup")]
+    Recovery {
+        #[source]
+        error: anyhow::Error,
+    },
 }
 
 #[derive(Error, Debug)]
@@ -163,7 +168,8 @@ impl From<Error> for ApiError {
             | ErrorType::RevokeLease { .. }
             | ErrorType::Migration { .. }
             | ErrorType::StateTransition(_)
-            | ErrorType::BackendMigration { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | ErrorType::BackendMigration { .. }
+            | ErrorType::Recovery { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             ErrorType::Unauthorized(_) | ErrorType::MasterKeyRecovery => StatusCode::UNAUTHORIZED,
             ErrorType::NotFound(_) | ErrorType::MountNotFound { .. } => StatusCode::NOT_FOUND,
             ErrorType::BadRequest(_)

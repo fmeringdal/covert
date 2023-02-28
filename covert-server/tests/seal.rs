@@ -8,7 +8,7 @@ use tokio::sync::oneshot;
 
 #[tokio::test]
 async fn seal() {
-    let sdk = setup(":memory:", ":memory:", covert_system::shutdown_signal()).await;
+    let sdk = setup(":memory:", covert_system::shutdown_signal(), None).await;
 
     // Start in uninit state
     let resp = sdk.status.status().await.map(|resp| resp.state);
@@ -157,23 +157,11 @@ async fn seal() {
 #[tokio::test]
 async fn recover_seal_config_after_shutdown() {
     let tmpdir_storage_path = tempfile::tempdir().unwrap();
-    let tmpdir_seal_storage_path = tempfile::tempdir().unwrap();
-    let storage_path = tmpdir_storage_path
-        .path()
-        .join("seal-config")
-        .to_str()
-        .unwrap()
-        .to_string();
-    let seal_config_path = tmpdir_seal_storage_path
-        .path()
-        .join("seal-config")
-        .to_str()
-        .unwrap()
-        .to_string();
+    let storage_path = tmpdir_storage_path.path().to_str().unwrap().to_string();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let shutdown_rx_fut = async { shutdown_rx.await.unwrap() };
 
-    let sdk = setup(&storage_path, &seal_config_path, shutdown_rx_fut).await;
+    let sdk = setup(&storage_path, shutdown_rx_fut, None).await;
 
     // Start in uninit state
     let resp = sdk.status.status().await.map(|resp| resp.state);
@@ -211,12 +199,7 @@ async fn recover_seal_config_after_shutdown() {
     assert!(sdk.status.status().await.is_err());
 
     // Start again
-    let sdk = setup(
-        &storage_path,
-        &seal_config_path,
-        covert_system::shutdown_signal(),
-    )
-    .await;
+    let sdk = setup(&storage_path, covert_system::shutdown_signal(), None).await;
 
     // State should be sealed
     let resp = sdk.status.status().await.map(|resp| resp.state);

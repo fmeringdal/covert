@@ -8,8 +8,9 @@ use covert_types::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    context::Context,
     error::{Error, ErrorType},
-    repos::{namespace::Namespace, Repos},
+    repos::namespace::Namespace,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -19,11 +20,11 @@ pub struct RevokeTokenParams {
 
 #[tracing::instrument(skip_all)]
 pub async fn handle_token_revocation(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Json(body): Json<RevokeTokenParams>,
 ) -> Result<Response, Error> {
-    repos.token.remove(&body.token, &ns.id).await?;
+    ctx.repos.token.remove(&body.token, &ns.id).await?;
     Ok(Response::ok())
 }
 
@@ -34,7 +35,7 @@ pub struct RenewTokenParams {
 
 #[tracing::instrument(skip_all)]
 pub async fn handle_token_renewal(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Json(body): Json<RenewLeaseParams<String>>,
 ) -> Result<Response, Error> {
@@ -48,7 +49,10 @@ pub async fn handle_token_renewal(
         .map_err(|_| ErrorType::InternalError(anyhow::Error::msg("Unable to create TTL")))?;
     let expires_at = Utc::now() + ttl;
 
-    repos.token.renew(&data.token, &ns.id, expires_at).await?;
+    ctx.repos
+        .token
+        .renew(&data.token, &ns.id, expires_at)
+        .await?;
 
     let resp = RenewLeaseResponse { ttl: body.ttl };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())

@@ -1,0 +1,14 @@
+port = 8080
+storage-path = "./tmp-db-storage"
+
+# MinIO example
+# [replication]
+# access-key-id = "minioadmin"
+# secret-access-key = "minioadmin"
+# bucket-url = "s3://mybkt.localhost:9000/"
+
+# S3 example
+# [replication]
+# access-key-id = ""
+# secret-access-key = ""
+# bucket-url = "s3://<BUCKET>/<PATH>/"
