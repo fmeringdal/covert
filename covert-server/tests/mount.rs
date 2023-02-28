@@ -80,25 +80,8 @@ async fn mount() {
 #[tokio::test]
 async fn recover_mounts_after_seal() {
     let tmpdir_storage_path = tempfile::tempdir().unwrap();
-    let tmpdir_seal_storage_path = tempfile::tempdir().unwrap();
-    let storage_path = tmpdir_storage_path
-        .path()
-        .join("seal-config")
-        .to_str()
-        .unwrap()
-        .to_string();
-    let seal_config_path = tmpdir_seal_storage_path
-        .path()
-        .join("seal-config")
-        .to_str()
-        .unwrap()
-        .to_string();
-    let sdk = setup(
-        &storage_path,
-        &seal_config_path,
-        covert_system::shutdown_signal(),
-    )
-    .await;
+    let storage_path = tmpdir_storage_path.path().to_str().unwrap().to_string();
+    let sdk = setup(&storage_path, covert_system::shutdown_signal(), None).await;
     let resp = sdk
         .operator
         .initialize(&InitializeParams {

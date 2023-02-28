@@ -11,13 +11,14 @@ use covert_types::{
 };
 
 use crate::{
+    context::Context,
     error::{Error, ErrorType},
     repos::{namespace::Namespace, Repos},
 };
 
-#[tracing::instrument(skip(repos))]
+#[tracing::instrument(skip(ctx))]
 pub async fn handle_entity_create(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Json(params): Json<CreateEntityParams>,
 ) -> Result<Response, Error> {
@@ -25,7 +26,7 @@ pub async fn handle_entity_create(
         name: params.name,
         namespace_id: ns.id.clone(),
     };
-    repos.entity.create(&entity).await?;
+    ctx.repos.entity.create(&entity).await?;
 
     let resp = CreateEntityResponse {
         entity: EntityWithPolicyAndAlias {
@@ -37,13 +38,14 @@ pub async fn handle_entity_create(
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(repos))]
+#[tracing::instrument(skip(ctx))]
 pub async fn handle_attach_entity_policy(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Json(params): Json<AttachEntityPolicyParams>,
 ) -> Result<Response, Error> {
-    let entity_policies = repos
+    let entity_policies = ctx
+        .repos
         .policy
         .batch_lookup(&params.policy_names, &ns.id)
         .await;
@@ -67,7 +69,8 @@ pub async fn handle_attach_entity_policy(
 
     let mut attached_policies = vec![];
     for policy in &params.policy_names {
-        if let Err(error) = repos
+        if let Err(error) = ctx
+            .repos
             .entity
             .attach_policy(&params.name, policy, &ns.id)
             .await
@@ -83,20 +86,25 @@ pub async fn handle_attach_entity_policy(
         attached_policies.push(policy.to_string());
     }
 
-    let entity = lookup_entity(&repos, &params.name, &ns.id).await?;
+    let entity = lookup_entity(&ctx.repos, &params.name, &ns.id).await?;
     let resp = AttachEntityPolicyResponse { entity };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(repos))]
+#[tracing::instrument(skip(ctx))]
 pub async fn handle_attach_entity_alias(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Json(params): Json<AttachEntityAliasParams>,
 ) -> Result<Response, Error> {
     let mut attached_aliases = vec![];
     for alias in &params.aliases {
-        if let Err(error) = repos.entity.attach_alias(&params.name, alias, &ns.id).await {
+        if let Err(error) = ctx
+            .repos
+            .entity
+            .attach_alias(&params.name, alias, &ns.id)
+            .await
+        {
             tracing::error!(
                 ?error,
                 ?alias,
@@ -108,19 +116,20 @@ pub async fn handle_attach_entity_alias(
         attached_aliases.push(alias.clone());
     }
 
-    let entity = lookup_entity(&repos, &params.name, &ns.id).await?;
+    let entity = lookup_entity(&ctx.repos, &params.name, &ns.id).await?;
     let resp = AttachEntityAliasResponse { entity };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(repos))]
+#[tracing::instrument(skip(ctx))]
 pub async fn handle_remove_entity_policy(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Path(name): Path<String>,
     Json(params): Json<RemoveEntityPolicyParams>,
 ) -> Result<Response, Error> {
-    if !repos
+    if !ctx
+        .repos
         .entity
         .remove_policy(&name, &params.policy_name, &ns.id)
         .await?
@@ -132,19 +141,20 @@ pub async fn handle_remove_entity_policy(
         .into());
     }
 
-    let entity = lookup_entity(&repos, &name, &ns.id).await?;
+    let entity = lookup_entity(&ctx.repos, &name, &ns.id).await?;
     let resp = RemoveEntityPolicyResponse { entity };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(repos))]
+#[tracing::instrument(skip(ctx))]
 pub async fn handle_remove_entity_alias(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Path(name): Path<String>,
     Json(params): Json<RemoveEntityAliasParams>,
 ) -> Result<Response, Error> {
-    if !repos
+    if !ctx
+        .repos
         .entity
         .remove_alias(&name, &params.alias, &ns.id)
         .await?
@@ -156,17 +166,17 @@ pub async fn handle_remove_entity_alias(
         .into());
     }
 
-    let entity = lookup_entity(&repos, &name, &ns.id).await?;
+    let entity = lookup_entity(&ctx.repos, &name, &ns.id).await?;
     let resp = RemoveEntityAliasResponse { entity };
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(repos))]
+#[tracing::instrument(skip(ctx))]
 pub async fn handle_list_entities(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
 ) -> Result<Response, Error> {
-    let entities = repos.entity.list(&ns.id).await?;
+    let entities = ctx.repos.entity.list(&ns.id).await?;
 
     let resp = ListEntitiesResponse {
         entities: entities

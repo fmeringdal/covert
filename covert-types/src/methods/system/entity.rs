@@ -59,7 +59,7 @@ pub struct ListEntitiesResponse {
     pub entities: Vec<EntityWithPolicyAndAlias>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct EntityWithPolicyAndAlias {
     pub name: String,
     pub policies: Vec<String>,

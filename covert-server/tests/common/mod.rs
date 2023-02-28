@@ -2,14 +2,15 @@ use covert_sdk::{
     operator::{InitializeParams, InitializeResponse, UnsealParams, UnsealResponse},
     Client,
 };
+use covert_system::ReplicationConfig;
 use tokio::sync::oneshot;
 
 use std::future::Future;
 
 pub async fn setup(
     storage_path: &str,
-    seal_storage_path: &str,
     shutdown_signal: impl Future<Output = ()> + Send + Sync + 'static,
+    replication: Option<ReplicationConfig>,
 ) -> Client {
     let (port_tx, port_rx) = oneshot::channel();
 
@@ -17,7 +18,7 @@ pub async fn setup(
         port: 0,
         port_tx: Some(port_tx),
         storage_path: storage_path.into(),
-        seal_storage_path: seal_storage_path.into(),
+        replication,
     };
 
     tokio::spawn(async move {
@@ -34,7 +35,7 @@ pub async fn setup(
 
 #[allow(dead_code)]
 pub async fn setup_unseal() -> Client {
-    let sdk = setup(":memory:", ":memory:", covert_system::shutdown_signal()).await;
+    let sdk = setup(":memory:", covert_system::shutdown_signal(), None).await;
     let shares = match sdk
         .operator
         .initialize(&InitializeParams {

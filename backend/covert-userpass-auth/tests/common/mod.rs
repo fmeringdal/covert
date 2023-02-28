@@ -14,7 +14,7 @@ pub async fn setup(storage: &str) -> Client {
         port: 0,
         port_tx: Some(port_tx),
         storage_path: storage.into(),
-        seal_storage_path: ":memory:".into(),
+        replication: None,
     };
 
     tokio::spawn(async move {

@@ -1,25 +1,21 @@
-use std::sync::Arc;
-
 use covert_framework::extract::Extension;
 use covert_types::{methods::system::SealResponse, response::Response};
 use tracing::info;
 
 use crate::{
+    context::Context,
     error::{Error, ErrorType},
-    repos::{namespace::Namespace, Repos},
-    ExpirationManager, Router,
+    repos::namespace::Namespace,
 };
 
 pub async fn handle_seal(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
-    Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
-    Extension(router): Extension<Arc<Router>>,
 ) -> Result<Response, Error> {
     if ns.parent_namespace_id.is_some() {
         return Err(ErrorType::SealInNonRootNamespace.into());
     }
-    seal(&repos, expiration_manager, router).await?;
+    seal(&ctx).await?;
 
     let resp = SealResponse {
         message: "Successfully sealed".into(),
@@ -28,25 +24,21 @@ pub async fn handle_seal(
 }
 
 #[tracing::instrument(skip_all)]
-async fn seal(
-    repos: &Repos,
-    expiration_manager: Arc<ExpirationManager>,
-    router: Arc<Router>,
-) -> Result<(), Error> {
+async fn seal(ctx: &Context) -> Result<(), Error> {
     info!("Sealing the storage");
-    repos.pool.seal()?;
+    ctx.repos.pool.seal()?;
 
     // Stop expiration manager
-    expiration_manager.stop().await;
+    ctx.expiration_manager.stop().await;
 
     // Clear all the route entries except system
-    let system = router.get_system_mount().ok_or_else(|| {
+    let system = ctx.router.get_system_mount().ok_or_else(|| {
         ErrorType::InternalError(anyhow::Error::msg(
             "router does not contain the system backend",
         ))
     })?;
-    router.clear_mounts();
-    router.mount_system(system);
+    ctx.router.clear_mounts();
+    ctx.router.mount_system(system);
 
     Ok(())
 }

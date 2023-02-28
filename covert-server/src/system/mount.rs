@@ -22,26 +22,22 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::{
+    context::Context,
     error::{Error, ErrorType},
     repos::{namespace::Namespace, Repos},
-    ExpirationManager, Router,
 };
 
 use super::{new_system_backend, SYSTEM_MOUNT_PATH};
 
-#[tracing::instrument(skip(repos, expiration_manager, router))]
+#[tracing::instrument(skip(ctx))]
 pub async fn handle_mount(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
-    Extension(router): Extension<Arc<Router>>,
-    Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
     Path(path): Path<String>,
     Json(body): Json<CreateMountParams>,
 ) -> Result<Response, Error> {
     let id = mount(
-        &repos,
-        expiration_manager,
-        router,
+        &ctx,
         path.clone(),
         ns.id.clone(),
         body.variant,
@@ -58,12 +54,12 @@ pub async fn handle_mount(
 }
 
 pub async fn handle_update_mount(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Path(path): Path<String>,
     Json(body): Json<UpdateMountParams>,
 ) -> Result<Response, Error> {
-    let me = update_mount(&repos, &path, &ns.id, body.config).await?;
+    let me = update_mount(&ctx.repos, &path, &ns.id, body.config).await?;
     let resp = UpdateMountResponse {
         variant: me.backend_type,
         config: me.config,
@@ -75,12 +71,12 @@ pub async fn handle_update_mount(
 
 pub async fn handle_mounts_list(
     Extension(ns): Extension<Namespace>,
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
 ) -> Result<Response, Error> {
     let mut auth = vec![];
     let mut secret = vec![];
 
-    let mounts = repos.mount.list(&ns.id).await?;
+    let mounts = ctx.repos.mount.list(&ns.id).await?;
 
     for mount in mounts {
         let mount = MountsListItemResponse {
@@ -102,13 +98,11 @@ pub async fn handle_mounts_list(
 }
 
 pub async fn handle_mount_disable(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
-    Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
-    Extension(router): Extension<Arc<Router>>,
     Path(path): Path<String>,
 ) -> Result<Response, Error> {
-    let mount = remove_mount(&repos, &router, &expiration_manager, &path, &ns.id).await?;
+    let mount = remove_mount(&ctx, &path, &ns.id).await?;
     let resp = DisableMountResponse {
         mount: MountsListItemResponse {
             id: mount.id,
@@ -141,15 +135,14 @@ async fn update_mount(
     Ok(me)
 }
 
-#[tracing::instrument(skip(repos, router, expiration_manager))]
+#[tracing::instrument(skip(ctx))]
 pub async fn remove_mount(
-    repos: &Repos,
-    router: &Router,
-    expiration_manager: &ExpirationManager,
+    ctx: &Context,
     path: &str,
     namespace_id: &str,
 ) -> Result<MountEntry, Error> {
-    let me = repos
+    let me = ctx
+        .repos
         .mount
         .get_by_path(path, namespace_id)
         .await?
@@ -164,32 +157,32 @@ pub async fn remove_mount(
         .into());
     }
 
-    expiration_manager
+    ctx.expiration_manager
         .revoke_leases_by_mount_prefix(path, namespace_id)
         .await?;
-    if !router.remove(me.id) {
+    if !ctx.router.remove(me.id) {
         return Err(ErrorType::MountNotFound { path: path.into() }.into());
     }
-    repos.mount.remove_by_path(path, namespace_id).await?;
+    ctx.repos.mount.remove_by_path(path, namespace_id).await?;
 
     // Delete all storage for the mount
     let namespace_id = Uuid::from_str(namespace_id).map_err(|_| {
         ErrorType::InternalError(anyhow::Error::msg("Namespace id was not a valid UUID"))
     })?;
     let storage = storage_pool_for_backend(
-        Arc::clone(&repos.pool),
+        Arc::clone(&ctx.repos.pool),
         namespace_id,
         me.backend_type,
         me.id,
     );
     let storage_prefix = storage.prefix();
     let tables =
-        crate::helpers::sqlite::get_resources_by_prefix(repos.pool.as_ref(), storage_prefix)
+        crate::helpers::sqlite::get_resources_by_prefix(ctx.repos.pool.as_ref(), storage_prefix)
             .await?;
 
     for table in tables {
         info!("Dropping table {}", table.name);
-        crate::helpers::sqlite::drop_table(repos.pool.as_ref(), &table.name).await?;
+        crate::helpers::sqlite::drop_table(ctx.repos.pool.as_ref(), &table.name).await?;
     }
 
     Ok(me)
@@ -198,9 +191,7 @@ pub async fn remove_mount(
 #[allow(clippy::too_many_arguments)]
 #[tracing::instrument(skip_all)]
 pub async fn mount_route_entry(
-    repos: &Repos,
-    expiration_manager: Arc<ExpirationManager>,
-    router: Arc<Router>,
+    ctx: &Context,
     id: Uuid,
     variant: BackendType,
     namespace_id: &str,
@@ -209,55 +200,37 @@ pub async fn mount_route_entry(
         ErrorType::InternalError(anyhow::Error::msg("Namespace id was not a valid UUID"))
     })?;
     let backend_storage =
-        storage_pool_for_backend(Arc::clone(&repos.pool), namespace_id, variant, id);
+        storage_pool_for_backend(Arc::clone(&ctx.repos.pool), namespace_id, variant, id);
 
     let prefix = backend_storage.prefix().to_string();
-    let backend = Arc::new(
-        new_backend(
-            repos,
-            Arc::clone(&router),
-            expiration_manager,
-            backend_storage,
-            variant,
-        )
-        .await?,
-    );
+    let backend = Arc::new(new_backend(ctx, backend_storage, variant).await?);
 
-    router.mount(id, Arc::clone(&backend));
+    ctx.router.mount(id, Arc::clone(&backend));
 
     Ok((backend, prefix))
 }
 
 async fn new_backend(
-    repos: &Repos,
-    router: Arc<Router>,
-    expiration_manager: Arc<ExpirationManager>,
+    ctx: &Context,
     storage: BackendStoragePool,
     variant: BackendType,
 ) -> Result<Backend, MigrationError> {
     match variant {
         BackendType::Kv => new_versioned_kv_backend(storage),
         BackendType::Postgres => new_psql_backend(storage).await,
-        BackendType::System => Ok(new_system_backend(
-            repos.clone(),
-            router,
-            expiration_manager,
-        )),
+        BackendType::System => Ok(new_system_backend(ctx.clone())),
         BackendType::Userpass => new_userpass_backend(storage),
     }
 }
 
 /// Mount a new backend
-#[allow(clippy::too_many_arguments)]
-#[tracing::instrument(skip(repos, expiration_manager, router))]
+#[tracing::instrument(skip(ctx))]
 pub async fn mount(
-    repos: &Repos,
-    expiration_manager: Arc<ExpirationManager>,
-    router: Arc<Router>,
+    ctx: &Context,
     path: String,
     namespace_id: String,
     variant: BackendType,
-    config: MountConfig,
+    mount_config: MountConfig,
 ) -> Result<Uuid, Error> {
     if variant == BackendType::System {
         return Err(ErrorType::InvalidMountType {
@@ -275,7 +248,7 @@ pub async fn mount(
 
     // Check if conflicting path exist
     // TODO: this should take a lock on mount creation
-    if let Some(mount) = repos.mount.longest_prefix(&path, &namespace_id).await? {
+    if let Some(mount) = ctx.repos.mount.longest_prefix(&path, &namespace_id).await? {
         return Err(ErrorType::MountPathConflict {
             path,
             existing_path: mount.path,
@@ -285,29 +258,21 @@ pub async fn mount(
 
     // Mount internally
     let uuid = Uuid::new_v4();
-    let (backend, prefix) = mount_route_entry(
-        repos,
-        expiration_manager,
-        router,
-        uuid,
-        variant,
-        &namespace_id,
-    )
-    .await?;
+    let (backend, prefix) = mount_route_entry(ctx, uuid, variant, &namespace_id).await?;
 
     let entry = MountEntry {
         id: uuid,
         path,
-        config,
+        config: mount_config,
         backend_type: variant,
         namespace_id,
     };
     // TODO: remove entry from the internal router if it fails to store in db
-    repos.mount.create(&entry).await?;
+    ctx.repos.mount.create(&entry).await?;
 
     if !backend.migrations.is_empty() {
         backend
-            .migrate(Arc::clone(&repos.pool), &uuid.to_string(), &prefix)
+            .migrate(Arc::clone(&ctx.repos.pool), &uuid.to_string(), &prefix)
             .await
             .map_err(|error| ErrorType::BackendMigration { error, variant })?;
     }

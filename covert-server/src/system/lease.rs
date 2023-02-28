@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use covert_framework::extract::{Extension, Json, Path};
 use covert_types::{
     methods::system::{
@@ -10,10 +8,10 @@ use covert_types::{
 };
 
 use crate::{
+    context::Context,
     error::{Error, ErrorType},
     expiration_manager::LeaseEntry,
     repos::namespace::Namespace,
-    ExpirationManager,
 };
 
 impl From<&LeaseEntry> for LeaseEntryDTO {
@@ -29,11 +27,12 @@ impl From<&LeaseEntry> for LeaseEntryDTO {
 }
 
 pub async fn handle_lease_revocation_by_mount(
-    Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Path(prefix): Path<String>,
 ) -> Result<Response, Error> {
-    let revoked_leases = expiration_manager
+    let revoked_leases = ctx
+        .expiration_manager
         .revoke_leases_by_mount_prefix(&prefix, &ns.id)
         .await?;
     let resp = RevokedLeasesResponse {
@@ -43,11 +42,12 @@ pub async fn handle_lease_revocation_by_mount(
 }
 
 pub async fn handle_lease_revocation(
-    Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Path(lease_id): Path<String>,
 ) -> Result<Response, Error> {
-    let revoked_lease = expiration_manager
+    let revoked_lease = ctx
+        .expiration_manager
         .revoke_lease_entry_by_id(&lease_id, &ns.id)
         .await?;
     let resp = RevokedLeaseResponse {
@@ -57,11 +57,12 @@ pub async fn handle_lease_revocation(
 }
 
 pub async fn handle_list_leases(
-    Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Path(prefix): Path<String>,
 ) -> Result<Response, Error> {
-    let leases = expiration_manager
+    let leases = ctx
+        .expiration_manager
         .list_by_mount_prefix(&prefix, &ns.id)
         .await?;
     let resp = ListLeasesResponse {
@@ -71,11 +72,12 @@ pub async fn handle_list_leases(
 }
 
 pub async fn handle_lease_lookup(
-    Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Path(lease_id): Path<String>,
 ) -> Result<Response, Error> {
-    let lease = expiration_manager
+    let lease = ctx
+        .expiration_manager
         .lookup(&lease_id, &ns.id)
         .await?
         .ok_or_else(|| ErrorType::NotFound(format!("Lease `{lease_id}` not found")))?;
@@ -86,12 +88,13 @@ pub async fn handle_lease_lookup(
 }
 
 pub async fn handle_lease_renew(
-    Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Json(body): Json<RenewLeaseParams>,
     Path(lease_id): Path<String>,
 ) -> Result<Response, Error> {
-    let lease = expiration_manager
+    let lease = ctx
+        .expiration_manager
         .renew_lease_entry(&lease_id, &ns.id, body.ttl)
         .await?;
     let resp = RenewLeaseResponse {

@@ -1,5 +1,5 @@
+use std::future::Future;
 use std::pin::Pin;
-use std::{future::Future, sync::Arc};
 
 use covert_framework::extract::{Extension, Json, Path};
 use covert_types::methods::system::DeleteNamespaceResponse;
@@ -12,17 +12,17 @@ use covert_types::{
 };
 use uuid::Uuid;
 
+use crate::context::Context;
 use crate::{
     error::{Error, ErrorType},
-    repos::{namespace::Namespace, Repos},
-    ExpirationManager, Router,
+    repos::namespace::Namespace,
 };
 
 use super::mount::remove_mount;
 
-#[tracing::instrument(skip(repos))]
+#[tracing::instrument(skip(ctx))]
 pub async fn create_namespace_handler(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Json(params): Json<CreateNamespaceParams>,
 ) -> Result<Response, Error> {
@@ -31,7 +31,7 @@ pub async fn create_namespace_handler(
         name: params.name,
         parent_namespace_id: Some(ns.id),
     };
-    repos.namespace.create(&new_namespace).await?;
+    ctx.repos.namespace.create(&new_namespace).await?;
 
     let resp = CreateNamespaceResponse {
         id: new_namespace.id,
@@ -40,12 +40,12 @@ pub async fn create_namespace_handler(
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(repos))]
+#[tracing::instrument(skip(ctx))]
 pub async fn list_namespaces_handler(
-    Extension(repos): Extension<Repos>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
 ) -> Result<Response, Error> {
-    let namespaces = repos.namespace.list(&ns.id).await?;
+    let namespaces = ctx.repos.namespace.list(&ns.id).await?;
 
     let resp = ListNamespaceResponse {
         namespaces: namespaces
@@ -59,27 +59,19 @@ pub async fn list_namespaces_handler(
     Response::raw(resp).map_err(|err| ErrorType::BadResponseData(err).into())
 }
 
-#[tracing::instrument(skip(repos, expiration_manager, router))]
+#[tracing::instrument(skip(ctx))]
 pub async fn delete_namespace_handler(
-    Extension(repos): Extension<Repos>,
-    Extension(expiration_manager): Extension<Arc<ExpirationManager>>,
-    Extension(router): Extension<Arc<Router>>,
+    Extension(ctx): Extension<Context>,
     Extension(ns): Extension<Namespace>,
     Path(name): Path<String>,
 ) -> Result<Response, Error> {
-    let namespaces = repos.namespace.list(&ns.id).await?;
+    let namespaces = ctx.repos.namespace.list(&ns.id).await?;
     let ns_to_delete = namespaces
         .into_iter()
         .find(|ns| ns.name == name)
         .ok_or_else(|| ErrorType::NotFound(format!("Namespace `{name}` not found")))?;
 
-    delete_namespace(
-        repos.clone(),
-        Arc::clone(&router),
-        Arc::clone(&expiration_manager),
-        ns_to_delete.id.clone(),
-    )
-    .await?;
+    delete_namespace(ctx, ns_to_delete.id.clone()).await?;
 
     let resp = DeleteNamespaceResponse {
         id: ns_to_delete.id,
@@ -89,38 +81,23 @@ pub async fn delete_namespace_handler(
 }
 
 pub fn delete_namespace(
-    repos: Repos,
-    router: Arc<Router>,
-    expiration_manager: Arc<ExpirationManager>,
+    ctx: Context,
     namespace_id: String,
 ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>> {
     Box::pin(async move {
         // Remove all child namespaces
-        let child_namespaces = repos.namespace.list(&namespace_id).await?;
+        let child_namespaces = ctx.repos.namespace.list(&namespace_id).await?;
         for child_ns in child_namespaces {
-            delete_namespace(
-                repos.clone(),
-                Arc::clone(&router),
-                Arc::clone(&expiration_manager),
-                child_ns.id,
-            )
-            .await?;
+            delete_namespace(ctx.clone(), child_ns.id).await?;
         }
 
         // Remove all mounts from namespace
-        let mounts = repos.mount.list(&namespace_id).await?;
+        let mounts = ctx.repos.mount.list(&namespace_id).await?;
         for mount in mounts {
-            remove_mount(
-                &repos,
-                &router,
-                &expiration_manager,
-                &mount.path,
-                &namespace_id,
-            )
-            .await?;
+            remove_mount(&ctx, &mount.path, &namespace_id).await?;
         }
 
-        if !repos.namespace.delete(&namespace_id).await? {
+        if !ctx.repos.namespace.delete(&namespace_id).await? {
             return Err(ErrorType::InternalError(anyhow::Error::msg(format!(
                 "Failed to remove namespace with id `{namespace_id}`"
             ))))?;

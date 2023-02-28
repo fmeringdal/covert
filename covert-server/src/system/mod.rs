@@ -9,8 +9,6 @@ mod status;
 mod token;
 mod unseal;
 
-use std::sync::Arc;
-
 use covert_framework::{
     create, create_with_config, delete, extract::Extension, read, read_with_config, renew, revoke,
     update, Backend, RouteConfig, Router,
@@ -21,7 +19,7 @@ use covert_types::{
     state::StorageState,
 };
 
-use crate::{repos::Repos, ExpirationManager};
+use crate::context::Context;
 
 use self::{
     entity::{
@@ -46,11 +44,7 @@ pub use token::RevokeTokenParams;
 
 pub const SYSTEM_MOUNT_PATH: &str = "sys/";
 
-pub fn new_system_backend(
-    repos: Repos,
-    router: Arc<crate::Router>,
-    expiration_manager: Arc<ExpirationManager>,
-) -> Backend {
+pub fn new_system_backend(context: Context) -> Backend {
     let router = Router::new()
         .route(
             "/unseal",
@@ -154,9 +148,7 @@ pub fn new_system_backend(
             create(create_namespace_handler).read(list_namespaces_handler),
         )
         .route("/namespaces/*name", delete(delete_namespace_handler))
-        .layer(Extension(expiration_manager))
-        .layer(Extension(router))
-        .layer(Extension(repos))
+        .layer(Extension(context))
         .build()
         .into_service();
 
