@@ -2,14 +2,14 @@
 name = "covert"
 description = "Covert CLI"
 license = "MIT OR Apache-2.0"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-covert-sdk = { path = "../covert-sdk", version = "0.1.2" }
-covert-system = { path = "../covert-server", version = "0.1.2" }
+covert-sdk = { path = "../covert-sdk", version = "0.1.3" }
+covert-system = { path = "../covert-server", version = "0.1.3" }
 clap = { version = "4.1", features = ["derive", "cargo", "env"] }
 humantime = "2.1"
 serde_json = "1.0"
