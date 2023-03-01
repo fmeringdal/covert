@@ -16,7 +16,7 @@ pub enum BackendType {
 }
 
 #[derive(
-    Debug, Copy, Clone, PartialEq, EnumString, Display, SerializeDisplay, DeserializeFromStr,
+    Debug, Copy, Clone, PartialEq, Eq, EnumString, Display, SerializeDisplay, DeserializeFromStr,
 )]
 pub enum BackendCategory {
     #[strum(ascii_case_insensitive, serialize = "secret")]

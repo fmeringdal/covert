@@ -256,6 +256,16 @@ pub async fn mount(
         .into());
     }
 
+    let is_auth_path = path.starts_with("auth/");
+    let is_auth_backend = BackendCategory::from(variant) == BackendCategory::Credential;
+    if is_auth_backend != is_auth_path {
+        if is_auth_backend {
+            return Err(ErrorType::AuthBackendNotUnderAuthPath)?;
+        }
+
+        return Err(ErrorType::LogicalBackendUnderAuthPath)?;
+    }
+
     // Mount internally
     let uuid = Uuid::new_v4();
     let (backend, prefix) = mount_route_entry(ctx, uuid, variant, &namespace_id).await?;
@@ -294,4 +304,113 @@ pub fn storage_pool_for_backend(
     let prefix = format!("covert_{ns_id}_{variant}_{id}_");
 
     BackendStoragePool::new(&prefix, pool)
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::SqlitePool;
+
+    use crate::{
+        context::ChildProcesses, expiration_manager::clock::SystemClock, repos::mount::tests::pool,
+        Config, ExpirationManager, Router,
+    };
+
+    use super::*;
+
+    async fn create_context() -> Context {
+        let pool = Arc::new(pool().await);
+        let u_pool = SqlitePool::connect(":memory:").await.unwrap();
+        let repos = Repos::new(pool, u_pool);
+        let router = Arc::new(Router::new(repos.mount.clone()));
+
+        Context {
+            config: Arc::new(Config {
+                port: 0,
+                port_tx: None,
+                replication: None,
+                storage_path: String::new(),
+            }),
+            child_processes: ChildProcesses::default(),
+            expiration_manager: Arc::new(ExpirationManager::new(
+                router.clone(),
+                repos.clone(),
+                SystemClock {},
+            )),
+            repos,
+            router,
+        }
+    }
+
+    #[tokio::test]
+    async fn auth_backend_needs_to_be_mounted_under_auth_path() {
+        let ctx = create_context().await;
+
+        let path = "not-auth/".to_string();
+        let namespace_id = Uuid::new_v4().to_string();
+        let variant = BackendType::Userpass;
+        let err = mount(&ctx, path, namespace_id, variant, MountConfig::default())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err.variant,
+            ErrorType::AuthBackendNotUnderAuthPath
+        ));
+    }
+
+    #[tokio::test]
+    async fn secret_engine_cannot_be_mounted_under_auth_path() {
+        let ctx = create_context().await;
+
+        let path = "auth/kv/".to_string();
+        let namespace_id = Uuid::new_v4().to_string();
+        let variant = BackendType::Kv;
+        let err = mount(&ctx, path, namespace_id, variant, MountConfig::default())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err.variant,
+            ErrorType::LogicalBackendUnderAuthPath
+        ));
+    }
+
+    #[tokio::test]
+    async fn system_backend_cannot_be_externally_mounted() {
+        let ctx = create_context().await;
+
+        let path = "new-sys/".to_string();
+        let namespace_id = Uuid::new_v4().to_string();
+        let variant = BackendType::System;
+        let err = mount(&ctx, path, namespace_id, variant, MountConfig::default())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err.variant,
+           ErrorType::InvalidMountType { variant } if variant == BackendType::System
+        ));
+    }
+
+    #[tokio::test]
+    async fn cannot_mount_at_path_that_collides_with_sys() {
+        let ctx = create_context().await;
+
+        let bad_paths = ["", "sy", "sys", "sys/", "sys/new/"];
+
+        for path in bad_paths {
+            let namespace_id = Uuid::new_v4().to_string();
+            let variant = BackendType::Kv;
+            let err = mount(
+                &ctx,
+                path.to_string(),
+                namespace_id,
+                variant,
+                MountConfig::default(),
+            )
+            .await
+            .unwrap_err();
+            assert!(matches!(
+                err.variant,
+               ErrorType::MountPathConflict { existing_path, .. } if existing_path == SYSTEM_MOUNT_PATH
+            ));
+        }
+    }
 }

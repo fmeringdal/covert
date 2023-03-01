@@ -81,6 +81,10 @@ pub enum ErrorType {
         #[source]
         error: anyhow::Error,
     },
+    #[error("Authenication methods needs to mounted under `auth/`")]
+    AuthBackendNotUnderAuthPath,
+    #[error("Secret engines cannot be mounted under `auth/`")]
+    LogicalBackendUnderAuthPath,
 }
 
 #[derive(Error, Debug)]
@@ -180,7 +184,9 @@ impl From<Error> for ApiError {
                 StatusCode::CONFLICT
             }
             ErrorType::ForeignKeyViolation { .. } => StatusCode::UNPROCESSABLE_ENTITY,
-            ErrorType::SealInNonRootNamespace => StatusCode::FORBIDDEN,
+            ErrorType::SealInNonRootNamespace
+            | ErrorType::AuthBackendNotUnderAuthPath
+            | ErrorType::LogicalBackendUnderAuthPath => StatusCode::FORBIDDEN,
         };
 
         ApiError {

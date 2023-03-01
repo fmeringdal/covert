@@ -5,7 +5,7 @@ use covert_sdk::{
 };
 use tokio::sync::oneshot;
 
-pub const MOUNT_PATH: &str = "database/";
+pub const MOUNT_PATH: &str = "auth/userpass/";
 
 pub async fn setup(storage: &str) -> Client {
     let (port_tx, port_rx) = oneshot::channel();
