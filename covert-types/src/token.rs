@@ -14,7 +14,7 @@ enum TokenType {
 impl TokenType {
     pub fn prefix(&self) -> &'static str {
         match self {
-            TokenType::Service => "hvs",
+            TokenType::Service => "s",
         }
     }
 }

@@ -84,17 +84,6 @@ impl BackendStoragePool {
             })
     }
 
-    // TODO: remove this
-    pub fn query_no_prefix(&self, sql: &impl ToString) -> Query {
-        Query {
-            query: ScopedQuery {
-                sql: sql.to_string(),
-            },
-            pool: Arc::clone(&self.pool),
-            arguments: SqliteArguments::default(),
-        }
-    }
-
     #[must_use]
     pub fn prefix(&self) -> &str {
         &self.prefix

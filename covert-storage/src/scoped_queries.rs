@@ -116,7 +116,6 @@ fn get_tables_in_expr(
     expr: &mut Expr,
     prefix: &str,
 ) -> Result<(), Error> {
-    // eprintln!("Expr is: {expr:#?}");
     match expr {
         Expr::Subquery(query) | Expr::ArraySubquery(query) => {
             get_tables_in_stmt_query(tables, query, prefix)?;
