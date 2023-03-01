@@ -21,7 +21,7 @@ Install Covert with [Cargo](https://doc.rust-lang.org/cargo/getting-started/inde
 cargo install covert
 ```
 
-Start the Covert server in dev mode
+Start the Covert server
 ```sh
 covert server --config ./config.example.toml
 ```
