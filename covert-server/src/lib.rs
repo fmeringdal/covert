@@ -152,7 +152,7 @@ pub async fn start(
         ))
         .service(RouterService::new(router.clone()));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     let covert_server = hyper::Server::bind(&addr).serve(Shared::new(server_router_svc));
     let addr = covert_server.local_addr();
     let covert_server = covert_server.with_graceful_shutdown(shutdown_handler);
