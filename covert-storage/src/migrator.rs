@@ -110,7 +110,7 @@ pub async fn migrate(
         .bind(&migration.description)
         .bind(checksum)
         .bind(chrono::Utc::now())
-        .execute(&mut tx)
+        .execute(&mut *tx)
         .await
         .map_err(|_| MigrationError::BadQuery)?;
 
@@ -213,6 +213,8 @@ pub async fn list_migrations(
 
 #[cfg(test)]
 mod tests {
+    use covert_types::state::StorageState;
+
     use super::*;
 
     #[derive(Debug, sqlx::FromRow, PartialEq, Eq)]
@@ -223,7 +225,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::too_many_lines)]
     async fn migration_works() {
-        let pool = EncryptedPool::new(&":memory:".to_string());
+        let pool = EncryptedPool::new(&":memory:".to_string(), StorageState::Uninitialized);
         let master_key = pool.initialize().unwrap().unwrap();
         pool.unseal(master_key).unwrap();
 

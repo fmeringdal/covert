@@ -11,13 +11,6 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN apt-get install golang-go -y
 ENV PATH="/root/go/bin:${PATH}"
 
-# Install Litestream
-RUN git clone https://github.com/fmeringdal/litestream.git /home/ubuntu/litestream
-
-WORKDIR /home/ubuntu/litestream
-RUN go install -tags sqlcipher ./cmd/litestream
-RUN litestream version
-
 # Install Covert
 WORKDIR /home/ubuntu/covert
 COPY . .

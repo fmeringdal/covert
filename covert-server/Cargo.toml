@@ -11,8 +11,8 @@ replication-integration-test = []
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0"
 aes-gcm = "0.10"
+anyhow = "1.0"
 bytes = { version = "1.1", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 covert-framework = { path = "../covert-framework", version = "0.1.3" }
@@ -34,7 +34,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", default-features = false }
 serde_with = "2.0"
 sharks = "0.4"
-sqlx = { version = "0.6", features = ["chrono", "time", "runtime-tokio-native-tls"] }
+sqlx = { version = "0.7", features = ["chrono", "time", "runtime-tokio-native-tls"] }
+synclite = "0.2.2"
 thiserror = "1.0"
 tokio = { version = "1.23", features = ["full", "test-util"] }
 tower-http = { version = "0.3", features = ["fs", "limit", "cors"] }
@@ -45,4 +46,5 @@ uuid = { version = "0.8", features = ["serde", "v4"] }
 
 [dev-dependencies]    
 covert-sdk = { path = "../covert-sdk", version = "0.1.2" }
+env_logger = "0.9"
 tempfile = "3.3"

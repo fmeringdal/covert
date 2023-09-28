@@ -10,3 +10,4 @@ members = [
     "backend/covert-psql",
     "backend/covert-userpass-auth",
 ]
+resolver = "2"

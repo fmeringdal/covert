@@ -98,6 +98,8 @@ pub(crate) fn create_ecrypted_pool(
         .journal_mode(SqliteJournalMode::Wal)
         .foreign_keys(true)
         .synchronous(SqliteSynchronous::Full)
+        .pragma("wal_autocheckpoint", "0")
+        .pragma("busy_timeout", "5000")
         .pragma("key", key)
         .filename(storage_path);
 

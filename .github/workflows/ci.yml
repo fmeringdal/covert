@@ -39,13 +39,6 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: '^1.19.1'
-      - name: Install Litestream
-        run: |
-          git clone https://github.com/fmeringdal/litestream.git
-          cd litestream 
-          go install -tags sqlcipher ./cmd/litestream
-          cd .. 
-          litestream version
       - uses: actions-rs/cargo@v1
         name: Format
         with:

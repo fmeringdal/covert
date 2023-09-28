@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use serde::Deserialize;
 use tokio::sync::oneshot;
 
@@ -54,17 +52,6 @@ impl Config {
                     "Replication is not supported for inmemory storage",
                 ));
             }
-
-            // Check if litestream is installed
-            let cmd = Command::new("litestream").arg("version").status();
-            match cmd {
-                Ok(s) if s.success() => (),
-                _ => {
-                    return Err(anyhow::Error::msg(
-                        "Litestream command not found, can not perform replication",
-                    ));
-                }
-            }
         }
 
         if !self.using_inmemory_storage() {
@@ -94,28 +81,25 @@ impl Config {
 pub struct ReplicationConfig {
     pub access_key_id: String,
     pub secret_access_key: String,
+    pub endpoint: Option<String>,
+    pub region: String,
+    pub prefix: String,
+    pub bucket: String,
+    // TODO
     // S3 url format: https://<bucket-name>.s3.<region-code>.amazonaws.com/
-    pub bucket_url: String,
+    // pub bucket_url: String,
 }
 
 impl ReplicationConfig {
     #[must_use]
-    pub fn seal_bucket_url(&self) -> String {
-        let maybe_slash = if self.bucket_url.ends_with('/') {
-            ""
-        } else {
-            "/"
-        };
-        format!("{}{maybe_slash}{}", self.bucket_url, "seal.db")
+    pub fn seal_db_prefix(&self) -> String {
+        let maybe_slash = if self.prefix.ends_with('/') { "" } else { "/" };
+        format!("{}{maybe_slash}{}", self.prefix, "seal.db")
     }
 
     #[must_use]
-    pub fn encrypted_bucket_url(&self) -> String {
-        let maybe_slash = if self.bucket_url.ends_with('/') {
-            ""
-        } else {
-            "/"
-        };
-        format!("{}{maybe_slash}{}", self.bucket_url, "covert.db")
+    pub fn encrypted_db_prefix(&self) -> String {
+        let maybe_slash = if self.prefix.ends_with('/') { "" } else { "/" };
+        format!("{}{maybe_slash}{}", self.prefix, "covert.db")
     }
 }

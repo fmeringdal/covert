@@ -99,13 +99,15 @@ impl NamespaceRepo {
     #[tracing::instrument(skip(self))]
     pub async fn find_parents(&self, id: &str) -> Result<Vec<Namespace>, Error> {
         let mut parents = vec![];
-        let Some(ns) =
-            sqlx::query_as::<_, Namespace>(&format!("SELECT * FROM {NAMESPACE_TABLE} WHERE id = ?"))
-                .bind(id.to_string())
-                .fetch_optional(self.pool.as_ref())
-                .await? else {
-                    return Ok(vec![]);
-                };
+        let Some(ns) = sqlx::query_as::<_, Namespace>(&format!(
+            "SELECT * FROM {NAMESPACE_TABLE} WHERE id = ?"
+        ))
+        .bind(id.to_string())
+        .fetch_optional(self.pool.as_ref())
+        .await?
+        else {
+            return Ok(vec![]);
+        };
 
         let mut parent_namespace_id = ns.parent_namespace_id.clone();
         parents.push(ns);
