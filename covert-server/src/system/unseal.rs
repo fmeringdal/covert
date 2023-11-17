@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::{
     context::Context,
     error::{Error, ErrorType},
-    recovery::replicate,
+    recovery::{recover, replicate},
     repos::{namespace::Namespace, token::TokenEntry, Repos},
 };
 
@@ -36,16 +36,18 @@ pub async fn handle_unseal(
         ctx.repos.seal.insert_key_share(key.as_bytes()).await?;
     }
 
-    let Ok(shares) = ctx.repos
+    let Ok(shares) = ctx
+        .repos
         .seal
         .get_key_shares()
         .await?
         .into_iter()
         .map(|k| String::from_utf8(k.key))
-        .collect::<Result<Vec<_>, _>>() else {
-            ctx.repos.seal.clear_key_shares().await?;
-            return Err(ErrorType::BadData("Invalid share key found".into()).into());
-        };
+        .collect::<Result<Vec<_>, _>>()
+    else {
+        ctx.repos.seal.clear_key_shares().await?;
+        return Err(ErrorType::BadData("Invalid share key found".into()).into());
+    };
 
     if usize::from(seal_config.threshold) > shares.len() {
         // Return progress
@@ -59,7 +61,9 @@ pub async fn handle_unseal(
 
     let Ok(master_key) = construct_master_key(&shares, seal_config.threshold) else {
         ctx.repos.seal.clear_key_shares().await?;
-        return Err(ErrorType::BadData("Unable to construct master key from key shares".into()).into());
+        return Err(
+            ErrorType::BadData("Unable to construct master key from key shares".into()).into(),
+        );
     };
     // No longer needed so just clear them
     ctx.repos.seal.clear_key_shares().await?;
@@ -93,40 +97,41 @@ fn construct_master_key(key_shares: &[String], threshold: u8) -> Result<String, 
 }
 
 async fn unseal(ctx: &Context, master_key: String) -> Result<(), Error> {
-    ctx.repos.pool.unseal(master_key.clone())?;
-
-    // Clear all shares now that master key is constructed
-    ctx.repos.seal.clear_key_shares().await?;
-
     // TODO: seal pool again if anything below fails
 
     // Try to recover encrypted storage if replication has not already started.
     // Replication could have already started if sealed and then unsealed again.
-    let encrypted_storage_replication_started = ctx
-        .child_processes
-        .encrypted_storage_replication_started()
-        .await;
-    if let (Some(replication), false) = (
-        ctx.config.replication.as_ref(),
-        encrypted_storage_replication_started,
-    ) {
+    // TODO: check if replication has already started
+    if let Some(replication) = ctx.config.replication.as_ref() {
         // Setup replication
+        recover(
+            replication,
+            &ctx.config.encrypted_storage_path(),
+            &replication.encrypted_db_prefix(),
+            Some(master_key.clone()),
+        )
+        .await
+        .unwrap();
         match replicate(
             replication,
             Some(master_key.clone()),
             &ctx.config.encrypted_storage_path(),
-            &replication.encrypted_bucket_url(),
-        ) {
-            Ok(p) => {
-                ctx.child_processes
-                    .set_encrypted_storage_replication(p)
-                    .await;
-            }
+            &replication.encrypted_db_prefix(),
+            ctx.stop_tx.subscribe(),
+        )
+        .await
+        {
+            Ok(()) => {}
             Err(err) => {
                 error!(?err, "Failed to setup replication");
             }
         }
     }
+
+    ctx.repos.pool.unseal(master_key.clone())?;
+
+    // Clear all shares now that master key is constructed
+    ctx.repos.seal.clear_key_shares().await?;
 
     // Run migrations
     crate::migrations::migrate_ecrypted_db(ctx.repos.pool.as_ref()).await?;

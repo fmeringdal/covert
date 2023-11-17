@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use covert_types::state::StorageState;
 use futures::{future::BoxFuture, Stream};
 use sqlx::{
@@ -167,19 +165,22 @@ pub enum EncryptedPoolError {
 }
 
 impl EncryptedPool {
-    pub fn new(storage_path: &impl ToString) -> Self {
-        let storage_path = storage_path.to_string();
-
-        if Path::new(&storage_path).exists() {
-            Self(OwnedRwLock::new(PoolState::Sealed(Storage {
+    pub fn new(storage_path: &impl ToString, state: StorageState) -> Self {
+        match state {
+            StorageState::Uninitialized => {
+                Self(OwnedRwLock::new(PoolState::Uninitialized(Storage {
+                    state: Uninitialized,
+                    storage_path: storage_path.to_string(),
+                })))
+            }
+            StorageState::Sealed => Self(OwnedRwLock::new(PoolState::Sealed(Storage {
                 state: Sealed,
-                storage_path,
-            })))
-        } else {
-            Self(OwnedRwLock::new(PoolState::Uninitialized(Storage {
-                state: Uninitialized,
-                storage_path,
-            })))
+                storage_path: storage_path.to_string(),
+            }))),
+            StorageState::Unsealed => {
+                // TODO
+                panic!("Cannot start in unsealed state")
+            }
         }
     }
 
@@ -315,7 +316,7 @@ impl EncryptedPool {
         })
     }
 
-    fn pool(&self) -> Result<Pool<Sqlite>, sqlx::Error> {
+    pub fn pool(&self) -> Result<Pool<Sqlite>, sqlx::Error> {
         self.0
             .read()
             .get_unsealed()
@@ -353,7 +354,7 @@ mod tests {
     async fn unseal_and_query() {
         let query = "SELECT count(*) FROM sqlite_master";
 
-        let pool = EncryptedPool::new(&":memory:".to_string());
+        let pool = EncryptedPool::new(&":memory:".to_string(), StorageState::Uninitialized);
 
         let res = sqlx::query(query).execute(&pool).await;
         assert!(matches!(res.unwrap_err(), sqlx::Error::PoolClosed));

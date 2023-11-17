@@ -21,14 +21,15 @@ mod system;
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 pub use config::*;
-use context::ChildProcesses;
 use covert_storage::EncryptedPool;
+use covert_types::state::StorageState;
 pub use expiration_manager::{ExpirationManager, LeaseEntry};
 pub use router::{Router, RouterService};
-use sqlx::sqlite::SqliteConnectOptions;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
+use tokio::sync::broadcast;
 use tower::{make::Shared, ServiceBuilder};
 use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     context::Context,
@@ -38,7 +39,7 @@ use crate::{
         namespace_extension::NamespaceExtensionLayer, request_mapper::LogicalRequestResponseLayer,
         storage_state_extension::StorageStateExtensionLayer,
     },
-    recovery::{recover, recover_encrypted_storage_snapshot, replicate},
+    recovery::{has_encrypted_storage_backup, recover, replicate},
     repos::Repos,
     system::new_system_backend,
 };
@@ -50,66 +51,94 @@ pub async fn shutdown_signal() {
         .expect("failed to install CTRL+C signal handler");
 }
 
-async fn shutdown_handler(child_processes: ChildProcesses) {
-    child_processes.kill_all().await;
-}
-
 pub async fn start(
     mut config: Config,
     shutdown_signal: impl Future<Output = ()>,
 ) -> anyhow::Result<()> {
+    info!("Starting covert");
     config.sanitize()?;
 
-    let child_processes = ChildProcesses::default();
-    let shutdown_handler = async {
+    // TODO
+    // let child_processes = ChildProcesses::default();
+    let (stop_tx, _stop_rx) = broadcast::channel(1);
+    let stop_tx_cloned = stop_tx.clone();
+    let shutdown_handler = async move {
         shutdown_signal.await;
         info!("Shutdown signal received");
-        shutdown_handler(child_processes.clone()).await;
+        // TODO:
+        stop_tx_cloned.send(()).unwrap();
     };
 
     let port_tx = config.port_tx.take();
     let config = Arc::new(config);
 
-    // Try to recover as far as possible if replication has configured and we
+    // Try to recover as far as possible if replication is configured and we
     // have a backup available
+    let mut initial_storage_state = StorageState::Uninitialized;
     if let Some(replication) = config.replication.as_ref() {
+        std::env::set_var("AWS_ACCESS_KEY_ID", &replication.access_key_id);
+        std::env::set_var("AWS_SECRET_ACCESS_KEY", &replication.secret_access_key);
         // Recover seal storage
+        info!("Recover seal storage");
         recover(
             replication,
             &config.seal_storage_path(),
-            &replication.seal_bucket_url(),
-        )?;
+            &replication.seal_db_prefix(),
+            None,
+        )
+        .await?;
+        info!("Recover seal storage done");
 
         // Recover latest snapshot of encrypted storage. Changes applied to DB
         // after latest snapshot will be applied after we have the encryption key
+        if has_encrypted_storage_backup(replication).await? {
+            initial_storage_state = StorageState::Sealed;
+        }
         // available during unseal.
-        recover_encrypted_storage_snapshot(&config, replication);
+        // info!("Recover encryted storage");
+        // recover_encrypted_storage_snapshot(&config, replication).await;
+        // info!("Recover encryted storage done");
+    } else {
+        warn!("No replication enabled");
     }
 
     // Create seal storage DB
+    if tokio::fs::try_exists(config.seal_storage_path()).await? {
+        initial_storage_state = StorageState::Sealed;
+    }
     let seal_db = sqlx::sqlite::SqlitePoolOptions::new()
         .min_connections(1)
         .max_connections(1)
         .connect_with(
             SqliteConnectOptions::new()
                 .create_if_missing(true)
+                .journal_mode(SqliteJournalMode::Wal)
                 .foreign_keys(true)
+                .synchronous(SqliteSynchronous::Full)
+                .pragma("wal_autocheckpoint", "0")
+                .pragma("busy_timeout", "5000")
                 .filename(config.seal_storage_path()),
         )
-        .await?;
+        .await
+        .unwrap();
 
     // Start replication of seal storage if configured
     if let Some(replication) = config.replication.as_ref() {
-        let p = replicate(
+        replicate(
             replication,
             None,
             &config.seal_storage_path(),
-            &replication.seal_bucket_url(),
-        )?;
-        child_processes.set_seal_storage_replication(p).await;
+            &replication.seal_db_prefix(),
+            stop_tx.subscribe(),
+        )
+        .await
+        .unwrap();
     }
 
-    let encrypted_pool = Arc::new(EncryptedPool::new(&config.encrypted_storage_path()));
+    let encrypted_pool = Arc::new(EncryptedPool::new(
+        &config.encrypted_storage_path(),
+        initial_storage_state,
+    ));
     let repos = Repos::new(encrypted_pool, seal_db);
 
     // Run migration
@@ -124,9 +153,9 @@ pub async fn start(
     let ctx = Context {
         config: Arc::clone(&config),
         repos: repos.clone(),
-        child_processes: child_processes.clone(),
         expiration_manager: Arc::clone(&expiration),
         router: Arc::clone(&router),
+        stop_tx,
     };
 
     // Mount system backend
@@ -167,5 +196,9 @@ pub async fn start(
         tracing::error!(?error, "Encountered server error. Shutting down.");
         return Err(error.into());
     }
+
+    repos.close().await;
+
+    info!("Covert server shut down");
     Ok(())
 }

@@ -43,4 +43,11 @@ impl Repos {
             unecrypted_pool,
         }
     }
+
+    pub async fn close(&self) {
+        if let Ok(pool) = self.pool.pool() {
+            pool.close().await;
+        }
+        self.unecrypted_pool.close().await;
+    }
 }

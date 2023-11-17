@@ -33,7 +33,7 @@ pub async fn secret_creds_revoke(
     // Start a transaction
     let mut tx = pool.begin().await?;
     for query in revocation_sql.split(';') {
-        sqlx::query(query).execute(&mut tx).await?;
+        sqlx::query(query).execute(&mut *tx).await?;
     }
     // Commit the transaction
     tx.commit().await?;

@@ -309,10 +309,11 @@ pub fn storage_pool_for_backend(
 #[cfg(test)]
 mod tests {
     use sqlx::SqlitePool;
+    use tokio::sync::broadcast;
 
     use crate::{
-        context::ChildProcesses, expiration_manager::clock::SystemClock, repos::mount::tests::pool,
-        Config, ExpirationManager, Router,
+        expiration_manager::clock::SystemClock, repos::mount::tests::pool, Config,
+        ExpirationManager, Router,
     };
 
     use super::*;
@@ -323,6 +324,7 @@ mod tests {
         let repos = Repos::new(pool, u_pool);
         let router = Arc::new(Router::new(repos.mount.clone()));
 
+        let (stop_tx, _stop_rx) = broadcast::channel(1);
         Context {
             config: Arc::new(Config {
                 port: 0,
@@ -330,7 +332,6 @@ mod tests {
                 replication: None,
                 storage_path: String::new(),
             }),
-            child_processes: ChildProcesses::default(),
             expiration_manager: Arc::new(ExpirationManager::new(
                 router.clone(),
                 repos.clone(),
@@ -338,6 +339,7 @@ mod tests {
             )),
             repos,
             router,
+            stop_tx,
         }
     }
 

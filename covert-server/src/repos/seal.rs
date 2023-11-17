@@ -100,7 +100,9 @@ impl SealRepo {
                 // Clear all shares if there are any bad shares
                 self.clear_key_shares().await?;
 
-                return Err(ErrorType::BadData("Unable to decrypt key share from seal storage".into()))?;
+                return Err(ErrorType::BadData(
+                    "Unable to decrypt key share from seal storage".into(),
+                ))?;
             };
             if !decrypted_key_shares.iter().any(|k| k.key == decrypted_key) {
                 decrypted_key_shares.push(KeyShare {

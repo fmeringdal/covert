@@ -29,7 +29,10 @@ async fn unseal_with_recovered_seal_config_from_local_storage() {
     let replication = ReplicationConfig {
         access_key_id: "minioadmin".to_string(),
         secret_access_key: "minioadmin".to_string(),
-        bucket_url: format!("s3://mybkt.localhost:9000/{random_bucket_key}/"),
+        bucket: "mybkt".to_string(),
+        endpoint: Some("http://localhost:9000".to_string()),
+        region: "eu-west-1".to_string(),
+        prefix: random_bucket_key,
     };
 
     let sdk = setup(&storage_path, shutdown_rx_fut, Some(replication.clone())).await;
@@ -68,6 +71,7 @@ async fn unseal_with_recovered_seal_config_from_local_storage() {
     // And state should now be unseal
     let resp = sdk.status.status().await.map(|resp| resp.state);
     assert_eq!(resp, Ok(StorageState::Unsealed));
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     // Shutdown
     shutdown_tx.send(()).unwrap();
@@ -136,7 +140,10 @@ async fn unseal_with_recovered_seal_config_from_remote_backup() {
     let replication = ReplicationConfig {
         access_key_id: "minioadmin".to_string(),
         secret_access_key: "minioadmin".to_string(),
-        bucket_url: format!("s3://mybkt.localhost:9000/{random_bucket_key}/"),
+        bucket: "mybkt".to_string(),
+        endpoint: Some("http://localhost:9000".to_string()),
+        region: "eu-west-1".to_string(),
+        prefix: random_bucket_key,
     };
 
     let sdk = setup(&storage_path, shutdown_rx_fut, Some(replication.clone())).await;
@@ -229,6 +236,7 @@ async fn unseal_with_recovered_seal_config_from_remote_backup() {
 
         // Just to clean up all replication subprocesses
         shutdown_tx.send(()).expect("shutdown cleanly");
+        tokio::time::sleep(Duration::from_secs(1)).await;
 
         // Delete local storage
         std::fs::remove_dir_all(tmpdir_storage_path.path()).unwrap();
@@ -254,7 +262,10 @@ async fn recover_encrypted_db_from_backup() {
     let replication = ReplicationConfig {
         access_key_id: "minioadmin".to_string(),
         secret_access_key: "minioadmin".to_string(),
-        bucket_url: format!("s3://mybkt.localhost:9000/{random_bucket_key}/"),
+        bucket: "mybkt".to_string(),
+        endpoint: Some("http://localhost:9000".to_string()),
+        region: "eu-west-1".to_string(),
+        prefix: random_bucket_key,
     };
 
     let sdk = setup(&storage_path, shutdown_rx_fut, Some(replication.clone())).await;
@@ -443,6 +454,9 @@ async fn recover_encrypted_db_from_backup() {
         .await
         .unwrap();
 
+    // Wait 2 sec until replication should have picked up
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
     // Shutdown and don't wait for replication and don't delete local storage
     shutdown_tx.send(()).expect("shutdown cleanly");
 
@@ -500,5 +514,4 @@ async fn recover_encrypted_db_from_backup() {
 
     // Just to clean up all replication subprocesses
     shutdown_tx.send(()).expect("shutdown cleanly");
-    tokio::time::sleep(Duration::from_secs(2)).await;
 }

@@ -104,7 +104,7 @@ async fn create_psql_role(
         .replace("{{password}}", password)
         .replace("{{expiration}}", expiration);
     for query in sql.split(';') {
-        sqlx::query(query).execute(&mut tx).await?;
+        sqlx::query(query).execute(&mut *tx).await?;
     }
 
     // Commit the transaction

@@ -42,6 +42,10 @@ impl DatabaseError for CovertDatabaseError {
     fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
         self
     }
+
+    fn kind(&self) -> sqlx::error::ErrorKind {
+        sqlx::error::ErrorKind::Other
+    }
 }
 
 #[derive(Debug, Clone)]
